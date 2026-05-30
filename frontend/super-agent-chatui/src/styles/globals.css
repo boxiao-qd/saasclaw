@@ -1,0 +1,227 @@
+@import "tailwindcss";
+@import "./tokens.css";
+
+@theme {
+  --color-primary: #00e5ff;
+  --color-primary-hover: #00b8d4;
+  --color-surface: #141414;
+  --color-surface-alt: #1e1e1e;
+  --color-secondary: #00e5ff;
+  --color-text: #f0f0f0;
+  --color-border: rgba(0, 229, 255, 0.12);
+  --color-error: #ff3d71;
+  --color-success: #00e096;
+  --color-warning: #ffaa00;
+  --width-sidebar: 260px;
+}
+
+body {
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  line-height: 1.5;
+  color: var(--color-text);
+  background: var(--color-surface);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+/* ── Glassmorphism utility ────────────────────────────────────────── */
+.glass {
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+}
+
+/* ── Glow utilities ────────────────────────────────────────────────── */
+.glow-primary { box-shadow: var(--glow-primary); }
+.glow-primary-strong { box-shadow: var(--glow-primary-strong); }
+.glow-success { box-shadow: var(--glow-success); }
+.glow-error { box-shadow: var(--glow-error); }
+.glow-warning { box-shadow: var(--glow-warning); }
+
+/* ── Animated gradient border ──────────────────────────────────────── */
+@keyframes gradient-rotate {
+  0% { --gradient-angle: 0deg; }
+  100% { --gradient-angle: 360deg; }
+}
+@property --gradient-angle {
+  syntax: "<angle>";
+  initial-value: 0deg;
+  inherits: false;
+}
+
+.border-gradient {
+  border: 1px solid transparent;
+  background:
+    linear-gradient(var(--color-surface-alt), var(--color-surface-alt)) padding-box,
+    conic-gradient(from var(--gradient-angle, 0deg), var(--color-primary), var(--color-success), var(--color-primary)) border-box;
+  animation: gradient-rotate 3s linear infinite;
+}
+
+/* ── Pulse animation for streaming ─────────────────────────────────── */
+@keyframes pulse-cyan {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+.animate-pulse-cyan {
+  animation: pulse-cyan 1.5s ease-in-out infinite;
+}
+
+/* ── Terminal cursor blink ─────────────────────────────────────────── */
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+.animate-blink {
+  animation: blink 1s step-end infinite;
+}
+
+/* ── Scrollbar styling ─────────────────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 229, 255, 0.25);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 229, 255, 0.5);
+}
+
+/* ── Markdown content styles ───────────────────────────────────────── */
+.md-content h1, .md-content h2, .md-content h3 {
+  color: var(--color-primary);
+  font-weight: 600;
+  margin: 0.75em 0 0.5em;
+}
+.md-content h1 { font-size: 1.25rem; }
+.md-content h2 { font-size: 1.125rem; }
+.md-content h3 { font-size: 1rem; }
+
+.md-content p { margin: 0.5em 0; }
+
+.md-content code {
+  font-family: var(--font-mono);
+  background: var(--color-primary-dim);
+  color: var(--color-primary);
+  padding: 0.15em 0.4em;
+  border-radius: 3px;
+  font-size: 0.9em;
+}
+
+.md-content pre {
+  background: var(--color-surface-dark);
+  border: 1px solid var(--color-border-dim);
+  border-radius: var(--radius-md);
+  padding: 0.75em 1em;
+  overflow-x: auto;
+  margin: 0.5em 0;
+}
+
+.md-content pre code {
+  background: none;
+  padding: 0;
+  color: var(--color-text);
+}
+
+/* ── highlight.js overrides for sci-fi theme ─────────────────────── */
+.hljs {
+  background: var(--color-surface-dark) !important;
+  color: var(--color-text) !important;
+}
+.hljs-keyword, .hljs-selector-tag, .hljs-literal { color: #ff3d71 !important; }
+.hljs-string, .hljs-doctag, .hljs-template-variable { color: #00e096 !important; }
+.hljs-comment, .hljs-quote { color: var(--color-text-tertiary) !important; font-style: italic; }
+.hljs-variable, .hljs-template-tag { color: #7c83ff !important; }
+.hljs-function, .hljs-title { color: var(--color-primary) !important; }
+.hljs-params { color: var(--color-text-secondary) !important; }
+.hljs-number, .hljs-built_in { color: #ffaa00 !important; }
+.hljs-type, .hljs-class .hljs-title { color: #00e096 !important; }
+.hljs-tag { color: #ff3d71 !important; }
+.hljs-attr, .hljs-attribute { color: var(--color-primary) !important; }
+.hljs-regexp, .hljs-link { color: #00e096 !important; }
+.hljs-meta { color: var(--color-text-tertiary) !important; }
+.hljs-deletion { color: #ff3d71 !important; }
+.hljs-addition { color: #00e096 !important; }
+.hljs-emphasis { font-style: italic; }
+.hljs-strong { font-weight: bold; color: #fff !important; }
+
+.md-content ul, .md-content ol {
+  margin: 0.5em 0;
+  padding-left: 1.5em;
+}
+
+.md-content li { margin: 0.25em 0; }
+
+.md-content blockquote {
+  border-left: 2px solid var(--color-primary);
+  padding-left: 1em;
+  color: var(--color-text-secondary);
+  margin: 0.5em 0;
+}
+
+.md-content a {
+  color: var(--color-primary);
+  text-decoration: underline;
+  text-decoration-color: rgba(0, 229, 255, 0.3);
+}
+
+.md-content strong { color: #fff; }
+
+.md-content hr {
+  border: none;
+  border-top: 1px solid var(--color-border-dim);
+  margin: 1em 0;
+}
+
+/* ── Table styles ────────────────────────────────────────────────────── */
+.md-content table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 0.5em 0;
+}
+.md-content th, .md-content td {
+  border: 1px solid var(--color-border-dim);
+  padding: 0.5em 0.75em;
+  text-align: left;
+}
+.md-content th {
+  background: var(--color-primary-dim);
+  color: var(--color-primary);
+  font-weight: 500;
+}
+
+/* ── Responsive helpers ────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  :root {
+    --sidebar-width: 240px;
+  }
+  .md-content pre {
+    font-size: 0.75rem;
+  }
+  .md-content code {
+    font-size: 0.75rem;
+  }
+}
+.collapse-wrapper {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows var(--transition-collapse);
+}
+.collapse-wrapper.open {
+  grid-template-rows: 1fr;
+}
+.collapse-inner {
+  overflow: hidden;
+}

@@ -1,0 +1,29 @@
+version: "3.9"
+
+services:
+
+  # Scheduler: scans cron_jobs every 30s, dispatches due tasks
+  celery-beat:
+    build:
+      context: ..
+      dockerfile: scheduler/Dockerfile
+    container_name: scheduler-beat
+    command: celery -A celery_app beat --loglevel=info
+    env_file:
+      - .env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+
+  # Worker: receives tasks from beat, HTTP POST to super-agent
+  celery-worker:
+    build:
+      context: ..
+      dockerfile: scheduler/Dockerfile
+    container_name: scheduler-worker
+    command: celery -A celery_app worker --concurrency=4 --loglevel=info
+    env_file:
+      - .env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped

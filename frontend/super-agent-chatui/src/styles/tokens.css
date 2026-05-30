@@ -1,0 +1,84 @@
+:root {
+  /* ── Core palette: neutral dark + cyan accent ─────────────────────── */
+  --color-primary: #00e5ff;          /* cyan neon — main accent */
+  --color-primary-hover: #00b8d4;
+  --color-primary-light: rgba(0, 229, 255, 0.12);
+  --color-primary-dim: rgba(0, 229, 255, 0.06);
+  --color-secondary: #00e5ff;        /* accent same as primary for glow */
+
+  /* ── Surfaces: neutral dark gray, no blue tint ────────────────────── */
+  --color-surface: #141414;          /* base bg — neutral dark gray */
+  --color-surface-alt: #1e1e1e;      /* panel / card bg */
+  --color-surface-card: rgba(30, 30, 30, 0.75);
+  --color-surface-raised: #262626;   /* raised element bg */
+  --color-surface-dark: #0a0a0a;     /* deepest bg (sidebar / footer) */
+
+  /* ── Text: higher contrast on neutral gray ──────────────────────────── */
+  --color-text: #f0f0f0;             /* bright white-gray — primary text */
+  --color-text-secondary: #9a9ab0;   /* muted lavender — secondary */
+  --color-text-tertiary: #5c5c72;    /* dim — hints / placeholders */
+
+  /* ── Borders ────────────────────────────────────────────────────────── */
+  --color-border: rgba(0, 229, 255, 0.12);
+  --color-border-dim: rgba(100, 100, 120, 0.25);
+  --color-border-focus: rgba(0, 229, 255, 0.5);
+
+  /* ── Status colors ─────────────────────────────────────────────────── */
+  --color-error: #ff3d71;
+  --color-error-glow: rgba(255, 61, 113, 0.25);
+  --color-success: #00e096;
+  --color-success-glow: rgba(0, 224, 150, 0.25);
+  --color-warning: #ffaa00;
+  --color-warning-glow: rgba(255, 170, 0, 0.25);
+
+  /* ── Glow / accent effects ─────────────────────────────────────────── */
+  --glow-primary: 0 0 12px rgba(0, 229, 255, 0.3);
+  --glow-primary-strong: 0 0 20px rgba(0, 229, 255, 0.5);
+  --glow-success: 0 0 12px rgba(0, 224, 150, 0.3);
+  --glow-error: 0 0 12px rgba(255, 61, 113, 0.3);
+  --glow-warning: 0 0 12px rgba(255, 170, 0, 0.3);
+
+  /* ── Glass effect ───────────────────────────────────────────────────── */
+  --glass-bg: rgba(30, 30, 30, 0.55);
+  --glass-border: rgba(0, 229, 255, 0.1);
+  --glass-blur: 12px;
+
+  /* ── Radii ──────────────────────────────────────────────────────────── */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+
+  /* ── Shadows ────────────────────────────────────────────────────────── */
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 4px 8px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 10px 20px rgba(0, 0, 0, 0.6);
+
+  /* ── Fonts ──────────────────────────────────────────────────────────── */
+  --font-sans: "Inter", system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", "Fira Code", ui-monospace, monospace;
+
+  /* ── Text sizes ─────────────────────────────────────────────────────── */
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --text-base: 1rem;
+  --text-lg: 1.125rem;
+  --text-xl: 1.25rem;
+
+  /* ── Spacing ────────────────────────────────────────────────────────── */
+  --spacing-xs: 0.25rem;
+  --spacing-sm: 0.5rem;
+  --spacing-md: 1rem;
+  --spacing-lg: 1.5rem;
+  --spacing-xl: 2rem;
+
+  /* ── Layout ──────────────────────────────────────────────────────────── */
+  --sidebar-width: 260px;
+  --sidebar-collapsed-width: 0px;
+
+  /* ── Transitions ────────────────────────────────────────────────────── */
+  --transition-fast: 150ms ease;
+  --transition-normal: 250ms ease;
+  --transition-collapse: 250ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-glow: 400ms ease;
+}

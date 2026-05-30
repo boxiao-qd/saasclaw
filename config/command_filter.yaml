@@ -1,0 +1,55 @@
+whitelist:
+  - echo
+  - date
+  - pwd
+  - whoami
+  - grep
+  - sort
+  - wc
+  - head
+  - tail
+  - cut
+  - ls
+  - ps
+  - df
+  - du
+  - free
+  - uptime
+  - which
+  - uname
+  - hostname
+
+blacklist_patterns:
+  - rm
+  - cp
+  - mv
+  - cat
+  - less
+  - more
+  - tee
+  - touch
+  - mkdir
+  - chmod
+  - chown
+  - ln
+  - dd
+  - shred
+  - truncate
+  - vim
+  - vi
+  - nano
+  - emacs
+  - ed
+
+dangerous_flags:
+  - "-i"
+  - "--in-place"
+  - "-w"
+  - "--write"
+  - "-c"
+  - "-o"
+  - "-O"
+
+redirect_patterns:
+  - ">"
+  - ">>"

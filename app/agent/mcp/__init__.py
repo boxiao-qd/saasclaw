@@ -1,0 +1,1 @@
+"""MCP integration module — connection management, config validation, tool registry bridge."""
