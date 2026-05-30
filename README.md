@@ -314,3 +314,11 @@ super-agent/
 ## License
 
 Proprietary. All rights reserved.
+
+---
+
+## 关键词 / Keywords
+
+**中文搜索：** SaaS化超级助理、企业内超级助理、企业级个人助理、私有化部署AI助理、企业AI智能体、企业内部大模型助理、个人超级助理、SaaS个人助理、企业安全AI助理、可私有化部署智能体
+
+**English Search:** enterprise saas super assistant, enterprise personal assistant, private deployment ai agent, corporate ai assistant, self-hosted llm agent, enterprise super assistant, saas ai assistant, private ai agent, enterprise-grade personal assistant
