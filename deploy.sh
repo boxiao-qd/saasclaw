@@ -121,7 +121,7 @@ setup_env() {
             local token
             token=$(python3 -c "import secrets; print(secrets.token_urlsafe(32))" 2>/dev/null || openssl rand -base64 32 2>/dev/null || date +%s | sha256sum | cut -d' ' -f1)
             if grep -q "INTERNAL_API_TOKEN=" "$PROJECT_ROOT/.env"; then
-                sed -i "s/INTERNAL_API_TOKEN=.*/INTERNAL_API_TOKEN=$token/" "$PROJECT_ROOT/.env"
+                sed -i '' "s/INTERNAL_API_TOKEN=.*/INTERNAL_API_TOKEN=$token/" "$PROJECT_ROOT/.env"
             else
                 echo "INTERNAL_API_TOKEN=$token" >> "$PROJECT_ROOT/.env"
             fi
@@ -138,11 +138,11 @@ setup_env() {
         # 生成随机 token
         local token
         token=$(python3 -c "import secrets; print(secrets.token_urlsafe(32))" 2>/dev/null || openssl rand -base64 32 2>/dev/null || date +%s | sha256sum | cut -d' ' -f1)
-        sed -i "s/INTERNAL_API_TOKEN=.*/INTERNAL_API_TOKEN=$token/" "$PROJECT_ROOT/.env"
+        sed -i '' "s/INTERNAL_API_TOKEN=.*/INTERNAL_API_TOKEN=$token/" "$PROJECT_ROOT/.env"
         # 生成 JWT secret
         local jwt_secret
         jwt_secret=$(python3 -c "import secrets; print(secrets.token_urlsafe(32))" 2>/dev/null || openssl rand -base64 32 2>/dev/null || date +%s | sha256sum | cut -d' ' -f1)
-        sed -i "s/JWT_SECRET=.*/JWT_SECRET=$jwt_secret/" "$PROJECT_ROOT/.env"
+        sed -i '' "s/JWT_SECRET=.*/JWT_SECRET=$jwt_secret/" "$PROJECT_ROOT/.env"
 
         warn "⚠️  请编辑 .env 文件，至少配置以下项："
         warn "  - OPENAI_API_BASE     LLM API 地址"
@@ -160,7 +160,7 @@ setup_env() {
     token=$(grep "^INTERNAL_API_TOKEN=" "$PROJECT_ROOT/.env" | cut -d'=' -f2-)
     if [ -n "$token" ]; then
         if [ -f "$SCHEDULER_DIR/.env" ]; then
-            sed -i "s/INTERNAL_API_TOKEN=.*/INTERNAL_API_TOKEN=$token/" "$SCHEDULER_DIR/.env"
+            sed -i '' "s/INTERNAL_API_TOKEN=.*/INTERNAL_API_TOKEN=$token/" "$SCHEDULER_DIR/.env"
         fi
         info "调度器 token 已同步"
     fi
@@ -205,12 +205,18 @@ start_fastapi() {
         return
     fi
 
+    # 创建独立虚拟环境，避免与其他项目的依赖冲突
+    if [ ! -d "$PROJECT_ROOT/.venv" ]; then
+        info "创建虚拟环境 .venv ..."
+        python3 -m venv "$PROJECT_ROOT/.venv"
+    fi
+
     info "安装 Python 依赖..."
-    pip3 install -r "$PROJECT_ROOT/requirements.txt" -q
+    "$PROJECT_ROOT/.venv/bin/pip" install -r "$PROJECT_ROOT/requirements.txt" -q
 
     # 数据库表自动创建（FastAPI 启动时执行 init_db）
-    info "启动 FastAPI (uvicorn :8000)..."
-    nohup python3 -m uvicorn app.main:app --host 0.0.0.0 --port 8001 \
+    info "启动 FastAPI (uvicorn :8001)..."
+    nohup "$PROJECT_ROOT/.venv/bin/python" -m uvicorn app.main:app --host 0.0.0.0 --port 8001 \
         > "$PROJECT_ROOT/logs/fastapi.log" 2>&1 &
     FASTAPI_PID=$!
     echo "$FASTAPI_PID" > "$PROJECT_ROOT/logs/fastapi.pid"
@@ -248,6 +254,37 @@ build_frontend() {
     cd "$PROJECT_ROOT"
 }
 
+# ── 启动前端开发服务器 ──────────────────────────────────
+start_frontend() {
+    step "启动前端开发服务器"
+
+    if [ -f "$PROJECT_ROOT/logs/frontend.pid" ] && kill -0 "$(cat "$PROJECT_ROOT/logs/frontend.pid")" 2>/dev/null; then
+        info "前端开发服务器已在运行"
+        return
+    fi
+
+    if [ ! -d "$FRONTEND_DIR/node_modules" ]; then
+        info "安装前端依赖..."
+        cd "$FRONTEND_DIR" && npm install --silent
+        cd "$PROJECT_ROOT"
+    fi
+
+    info "启动 Vite 开发服务器 (:3000)..."
+    cd "$FRONTEND_DIR"
+    nohup npm run dev > "$PROJECT_ROOT/logs/frontend.log" 2>&1 &
+    FRONTEND_PID=$!
+    echo "$FRONTEND_PID" > "$PROJECT_ROOT/logs/frontend.pid"
+    cd "$PROJECT_ROOT"
+
+    sleep 3
+    if kill -0 "$FRONTEND_PID" 2>/dev/null; then
+        info "前端已启动: PID=$FRONTEND_PID 端口=3000"
+    else
+        err "前端启动失败，查看日志: $PROJECT_ROOT/logs/frontend.log"
+        exit 1
+    fi
+}
+
 # ── 启动调度器 ──────────────────────────────────────────
 start_scheduler() {
     step "启动定时任务调度器"
@@ -276,7 +313,7 @@ start_nginx() {
 
         docker run -d \
             --name lucid-nginx \
-            --network lucid_default \
+            --add-host=host.docker.internal:host-gateway \
             -p 3001:3001 \
             -v "$FRONTEND_DIR/dist:/usr/share/nginx/html:ro" \
             -v "$PROJECT_ROOT/nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro" \
@@ -320,15 +357,15 @@ show_status() {
         fi
     done
 
-    if docker ps --format '{{.Names}}' | grep -q '^lucid-nginx$'; then
-        printf "  ${GREEN}●${NC} %-20s 运行中\n" "nginx (前端)"
+    if [ -f "$PROJECT_ROOT/logs/frontend.pid" ] && kill -0 "$(cat "$PROJECT_ROOT/logs/frontend.pid")" 2>/dev/null; then
+        printf "  ${GREEN}●${NC} %-20s 运行中  (本地, PID=%s)\n" "frontend" "$(cat "$PROJECT_ROOT/logs/frontend.pid")"
     else
-        printf "  ${YELLOW}○${NC} %-20s 未运行  (前端开发: npm run dev)\n" "nginx (前端)"
+        printf "  ${RED}○${NC} %-20s 未运行\n" "frontend"
     fi
 
     echo ""
     echo "  ── 访问地址 ──"
-    echo "  前端页面:    http://localhost:3001"
+    echo "  前端页面:    http://localhost:3000"
     echo "  API 文档:    http://localhost:8001/bx/api/docs"
     echo "  MinIO 控制台: http://localhost:9003"
     echo ""
@@ -337,6 +374,17 @@ show_status() {
 # ── 停止所有服务 ────────────────────────────────────────
 stop_all() {
     step "停止所有服务"
+
+    # 停止前端开发服务器
+    if [ -f "$PROJECT_ROOT/logs/frontend.pid" ]; then
+        local fpid
+        fpid=$(cat "$PROJECT_ROOT/logs/frontend.pid")
+        if kill -0 "$fpid" 2>/dev/null; then
+            kill "$fpid" 2>/dev/null || true
+            info "已停止前端 (PID=$fpid)"
+        fi
+        rm -f "$PROJECT_ROOT/logs/frontend.pid"
+    fi
 
     # 停止本地 FastAPI
     if [ -f "$PROJECT_ROOT/logs/fastapi.pid" ]; then
@@ -352,10 +400,6 @@ stop_all() {
     # 停止调度器
     cd "$SCHEDULER_DIR" && docker compose down 2>/dev/null || true
     cd "$PROJECT_ROOT"
-
-    # 停止 nginx 前端
-    docker stop lucid-nginx 2>/dev/null || true
-    docker rm lucid-nginx 2>/dev/null || true
 
     # 停止基础设施
     docker compose down 2>/dev/null || true
@@ -377,17 +421,16 @@ main() {
     setup_env
     start_infra
     start_fastapi
-    build_frontend
     start_scheduler
-    start_nginx
+    start_frontend
     show_status
 
     info "部署完成！"
     echo ""
     info "查看日志:"
     echo "  FastAPI:  tail -f $PROJECT_ROOT/logs/fastapi.log"
-    echo "  调度器:   docker logs -f scheduler-worker"
-    echo "  Nginx:    docker logs -f super-agent-nginx"
+    echo "  前端:     tail -f $PROJECT_ROOT/logs/frontend.log"
+    echo "  调度器:   docker logs -f lucid-scheduler-worker"
     echo ""
     info "停止所有服务: $0 --stop"
 }

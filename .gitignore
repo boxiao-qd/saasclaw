@@ -12,8 +12,9 @@ dist/
 venv/
 env/
 .env
-.env.*
+**/.env
 !.env.example
+!**/.env.example
 
 # Node
 node_modules/

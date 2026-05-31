@@ -15,7 +15,7 @@ export default defineConfig({
     port: 3000,
     proxy: {
       "/bx/api": {
-        target: "http://localhost:8000",
+        target: "http://localhost:8001",
         changeOrigin: true,
         configure: (proxy) => {
           proxy.on("proxyReq", (_proxyReq, _req, res) => {
