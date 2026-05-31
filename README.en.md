@@ -8,6 +8,8 @@ Compared to other personal AI assistants, Lucid balances powerful flexibility wi
 
 The current version runs on a single machine (local or server), but with minimal adaptation it can support server-side execution on a PaaS platform with the frontend running in a personal browser. It already implements user-based session isolation, short/long-term memory, scheduled tasks, notifications, and custom skill isolation — achieving stateless, SaaS-ready agent execution.
 
+> **Note:** The current stage of this project is deployed on a Mac. Server-side deployment is planned for a future release. However, if you'd like to deploy it on a server right now, it's straightforward — simply update the connection information for frontend → Lucid and Lucid → Redis/MySQL, then deploy to a pod.
+
 ## What You Can Do
 
 ### Daily Conversations
