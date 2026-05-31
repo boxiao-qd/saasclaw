@@ -5,80 +5,80 @@ services:
   # ── 数据库 ────────────────────────────────────────────
   mysql:
     image: mysql:8.0
-    container_name: mysql
+    container_name: lucid-mysql
     environment:
       MYSQL_ROOT_PASSWORD: root123
       MYSQL_DATABASE: super_agent
     ports:
-      - "3306:3306"
+      - "3307:3306"
     volumes:
-      - mysql_data:/var/lib/mysql
+      - lucid_mysql_data:/var/lib/mysql
     restart: unless-stopped
 
   # ── 缓存 ──────────────────────────────────────────────
   redis:
     image: redis:7-alpine
-    container_name: redis
+    container_name: lucid-redis
     ports:
-      - "6379:6379"
+      - "6380:6379"
     restart: unless-stopped
 
   # ── 搜索引擎 ──────────────────────────────────────────
   elasticsearch:
     image: elasticsearch:8.13.4
-    container_name: elasticsearch
+    container_name: lucid-elasticsearch
     environment:
       - discovery.type=single-node
       - xpack.security.enabled=false
       - ES_JAVA_OPTS=-Xms512m -Xmx512m
       - http.cors.enabled=true
-      - http.cors.allow-origin=http://localhost:8080
+      - http.cors.allow-origin=http://localhost:8081
       - http.cors.allow-headers=X-Requested-With,Content-Type,Content-Length,Authorization
     ports:
-      - "9200:9200"
+      - "9201:9200"
     volumes:
-      - es_data:/usr/share/elasticsearch/data
+      - lucid_es_data:/usr/share/elasticsearch/data
     restart: unless-stopped
 
   # ── 对象存储 ──────────────────────────────────────────
   minio:
     image: minio/minio
-    container_name: minio
+    container_name: lucid-minio
     environment:
       MINIO_ROOT_USER: minioadmin
       MINIO_ROOT_PASSWORD: minioadmin123
     command: server /data --console-address :9001
     ports:
-      - "9000:9000"   # API
-      - "9001:9001"   # Console (内置 UI)
+      - "9002:9000"   # API
+      - "9003:9001"   # Console (内置 UI)
     volumes:
-      - minio_data:/data
+      - lucid_minio_data:/data
     restart: unless-stopped
 
   # ── GUI 工具 ──────────────────────────────────────────
 
-  # Redis GUI: http://localhost:5540
+  # Redis GUI: http://localhost:5541
   redisinsight:
     image: redis/redisinsight:latest
-    container_name: redisinsight
+    container_name: lucid-redisinsight
     ports:
-      - "5540:5540"
+      - "5541:5540"
     restart: unless-stopped
 
-  # Elasticsearch GUI: http://localhost:8080
+  # Elasticsearch GUI: http://localhost:8081
   elasticvue:
     image: cars10/elasticvue:latest
-    container_name: elasticvue
+    container_name: lucid-elasticvue
     ports:
-      - "8080:8080"
+      - "8081:8080"
     restart: unless-stopped
 
   # ── FastAPI 应用 ──────────────────────────────────────
   fastapi:
     build: .
-    container_name: fastapi
+    container_name: lucid-fastapi
     ports:
-      - "8000:8000"
+      - "8001:8000"
     env_file:
       - .env
     depends_on:
@@ -89,6 +89,6 @@ services:
     restart: unless-stopped
 
 volumes:
-  mysql_data:
-  es_data:
-  minio_data:
+  lucid_mysql_data:
+  lucid_es_data:
+  lucid_minio_data:

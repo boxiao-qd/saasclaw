@@ -9,14 +9,14 @@
 #   ./deploy.sh --stop       # 停止所有服务
 #
 # 组件清单:
-#   MySQL 8.0      :3306    — 业务数据库
-#   Redis 7        :6379    — 缓存 / Celery broker
-#   Elasticsearch  :9200    — 消息全文搜索
-#   MinIO          :9000    — 对象存储 (API) / :9001 (Console)
-#   FastAPI        :8000    — 后端 API
+#   MySQL 8.0      :3307    — 业务数据库
+#   Redis 7        :6380    — 缓存 / Celery broker
+#   Elasticsearch  :9201    — 消息全文搜索
+#   MinIO          :9002    — 对象存储 (API) / :9003 (Console)
+#   FastAPI        :8001    — 后端 API
 #   Celery Beat    (内部)    — 定时任务调度器
 #   Celery Worker  (内部)    — 定时任务执行器（HTTP 分发）
-#   Nginx          :3000    — 前端静态文件 + API 反代
+#   Nginx          :3001    — 前端静态文件 + API 反代
 # =============================================================================
 
 set -euo pipefail
@@ -174,12 +174,12 @@ start_infra() {
 
     info "等待 MySQL 就绪..."
     for i in $(seq 1 30); do
-        if docker exec mysql mysqladmin ping -h localhost --silent 2>/dev/null; then
+        if docker exec lucid-mysql mysqladmin ping -h localhost --silent 2>/dev/null; then
             info "MySQL 已就绪"
             break
         fi
         if [ $i -eq 30 ]; then
-            err "MySQL 启动超时，请检查 docker logs mysql"
+            err "MySQL 启动超时，请检查 docker logs lucid-mysql"
             exit 1
         fi
         sleep 2
@@ -187,7 +187,7 @@ start_infra() {
 
     info "等待 Redis 就绪..."
     for i in $(seq 1 15); do
-        if docker exec redis redis-cli ping 2>/dev/null | grep -q PONG; then
+        if docker exec lucid-redis redis-cli ping 2>/dev/null | grep -q PONG; then
             info "Redis 已就绪"
             break
         fi
@@ -200,8 +200,8 @@ start_fastapi() {
     step "启动 FastAPI 后端"
 
     # 检查是否已有 fastapi 容器在运行
-    if docker ps --format '{{.Names}}' | grep -q '^fastapi$'; then
-        info "fastapi 容器已在运行"
+    if docker ps --format '{{.Names}}' | grep -q '^lucid-fastapi$'; then
+        info "lucid-fastapi 容器已在运行"
         return
     fi
 
@@ -210,14 +210,14 @@ start_fastapi() {
 
     # 数据库表自动创建（FastAPI 启动时执行 init_db）
     info "启动 FastAPI (uvicorn :8000)..."
-    nohup python3 -m uvicorn app.main:app --host 0.0.0.0 --port 8000 \
+    nohup python3 -m uvicorn app.main:app --host 0.0.0.0 --port 8001 \
         > "$PROJECT_ROOT/logs/fastapi.log" 2>&1 &
     FASTAPI_PID=$!
     echo "$FASTAPI_PID" > "$PROJECT_ROOT/logs/fastapi.pid"
 
     sleep 3
     if kill -0 "$FASTAPI_PID" 2>/dev/null; then
-        info "FastAPI 已启动: PID=$FASTAPI_PID 端口=8000"
+        info "FastAPI 已启动: PID=$FASTAPI_PID 端口=8001"
     else
         err "FastAPI 启动失败，查看日志: $PROJECT_ROOT/logs/fastapi.log"
         exit 1
@@ -271,18 +271,18 @@ start_nginx() {
 
     # 如果前端 dist 存在，用 nginx 容器提供
     if [ -d "$FRONTEND_DIR/dist" ]; then
-        docker stop super-agent-nginx 2>/dev/null || true
-        docker rm super-agent-nginx 2>/dev/null || true
+        docker stop lucid-nginx 2>/dev/null || true
+        docker rm lucid-nginx 2>/dev/null || true
 
         docker run -d \
-            --name super-agent-nginx \
-            --network super-agent_default \
-            -p 3000:3000 \
+            --name lucid-nginx \
+            --network lucid_default \
+            -p 3001:3001 \
             -v "$FRONTEND_DIR/dist:/usr/share/nginx/html:ro" \
             -v "$PROJECT_ROOT/nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro" \
             nginx:alpine
 
-        info "Nginx 前端服务已启动: http://localhost:3000"
+        info "Nginx 前端服务已启动: http://localhost:3001"
     else
         warn "未找到前端构建产物，跳过 Nginx。运行: cd frontend/super-agent-chatui && npm run build"
     fi
@@ -294,7 +294,7 @@ show_status() {
 
     echo ""
     echo "  ── 基础设施 ──"
-    for svc in mysql redis elasticsearch minio; do
+    for svc in lucid-mysql lucid-redis lucid-elasticsearch lucid-minio; do
         if docker ps --format '{{.Names}}' | grep -q "^${svc}$"; then
             printf "  ${GREEN}●${NC} %-20s 运行中\n" "$svc"
         else
@@ -304,15 +304,15 @@ show_status() {
 
     echo ""
     echo "  ── 应用服务 ──"
-    if docker ps --format '{{.Names}}' | grep -q '^fastapi$'; then
-        printf "  ${GREEN}●${NC} %-20s 运行中  (Docker)\n" "fastapi"
+    if docker ps --format '{{.Names}}' | grep -q '^lucid-fastapi$'; then
+        printf "  ${GREEN}●${NC} %-20s 运行中  (Docker)\n" "lucid-fastapi"
     elif [ -f "$PROJECT_ROOT/logs/fastapi.pid" ] && kill -0 "$(cat "$PROJECT_ROOT/logs/fastapi.pid")" 2>/dev/null; then
-        printf "  ${GREEN}●${NC} %-20s 运行中  (本地, PID=%s)\n" "fastapi" "$(cat "$PROJECT_ROOT/logs/fastapi.pid")"
+        printf "  ${GREEN}●${NC} %-20s 运行中  (本地, PID=%s)\n" "lucid-fastapi" "$(cat "$PROJECT_ROOT/logs/fastapi.pid")"
     else
-        printf "  ${RED}○${NC} %-20s 未运行\n" "fastapi"
+        printf "  ${RED}○${NC} %-20s 未运行\n" "lucid-fastapi"
     fi
 
-    for svc in scheduler-beat scheduler-worker; do
+    for svc in lucid-scheduler-beat lucid-scheduler-worker; do
         if docker ps --format '{{.Names}}' | grep -q "^${svc}$"; then
             printf "  ${GREEN}●${NC} %-20s 运行中\n" "$svc"
         else
@@ -320,7 +320,7 @@ show_status() {
         fi
     done
 
-    if docker ps --format '{{.Names}}' | grep -q '^super-agent-nginx$'; then
+    if docker ps --format '{{.Names}}' | grep -q '^lucid-nginx$'; then
         printf "  ${GREEN}●${NC} %-20s 运行中\n" "nginx (前端)"
     else
         printf "  ${YELLOW}○${NC} %-20s 未运行  (前端开发: npm run dev)\n" "nginx (前端)"
@@ -328,9 +328,9 @@ show_status() {
 
     echo ""
     echo "  ── 访问地址 ──"
-    echo "  前端页面:    http://localhost:3000"
-    echo "  API 文档:    http://localhost:8000/bx/api/docs"
-    echo "  MinIO 控制台: http://localhost:9001"
+    echo "  前端页面:    http://localhost:3001"
+    echo "  API 文档:    http://localhost:8001/bx/api/docs"
+    echo "  MinIO 控制台: http://localhost:9003"
     echo ""
 }
 
@@ -354,8 +354,8 @@ stop_all() {
     cd "$PROJECT_ROOT"
 
     # 停止 nginx 前端
-    docker stop super-agent-nginx 2>/dev/null || true
-    docker rm super-agent-nginx 2>/dev/null || true
+    docker stop lucid-nginx 2>/dev/null || true
+    docker rm lucid-nginx 2>/dev/null || true
 
     # 停止基础设施
     docker compose down 2>/dev/null || true

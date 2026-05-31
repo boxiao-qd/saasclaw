@@ -7,7 +7,7 @@ services:
     build:
       context: ..
       dockerfile: scheduler/Dockerfile
-    container_name: scheduler-beat
+    container_name: lucid-scheduler-beat
     command: celery -A celery_app beat --loglevel=info
     env_file:
       - .env
@@ -20,7 +20,7 @@ services:
     build:
       context: ..
       dockerfile: scheduler/Dockerfile
-    container_name: scheduler-worker
+    container_name: lucid-scheduler-worker
     command: celery -A celery_app worker --concurrency=4 --loglevel=info
     env_file:
       - .env
