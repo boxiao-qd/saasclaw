@@ -453,6 +453,10 @@ class AgentService:
                         continue
 
                 # ── Branch: no tool calls → final response, done ──────────
+                # Safety net: auto-complete remaining todos if the model
+                # produced a final answer without marking all tasks as completed.
+                if force_complete_todos(session_id):
+                    log.info("[%s] 第%d轮 — 自动完成剩余待办任务", sid, iteration)
                 # Safety: if model produced empty content, inject a fallback
                 if not current_content.strip():
                     if reasoning_content.strip() and not reasoning_reprompt_done:
@@ -500,11 +504,6 @@ class AgentService:
                 })
                 log.info("[%s] message_done事件已推送 — msg_id=%s streaming_id=%s", sid, final_msg.id, assistant_id)
 
-                # Safety net: auto-complete remaining todos if the model
-                # produced a final answer without marking all tasks as completed.
-                if force_complete_todos(session_id):
-                    log.info("[%s] 第%d轮 — 自动完成剩余待办任务", sid, iteration)
-
                 # session end: per-turn distillation → short_term, then consolidate → long_term
                 try:
                     distiller = MemoryDistiller(self._employee_id, self._session_factory)
@@ -542,6 +541,8 @@ class AgentService:
                 fallback = current_content or "[已达最大执行步骤限制，请简化任务后重试]"
                 log.warning("[%s] 已达最大执行次数 (%d) — 耗时=%.2fs",
                             sid, max_iterations, time.perf_counter() - loop_start)
+                if force_complete_todos(session_id):
+                    log.info("[%s] 达到最大轮次 — 自动完成剩余待办任务", sid)
                 final_msg = await msg_dao.create(
                     session_id=session_id,
                     role="assistant",
@@ -558,8 +559,6 @@ class AgentService:
                     "stop_reason": "max_iterations",
                 })
                 log.info("[%s] message_done事件已推送（最大轮次）— msg_id=%s", sid, final_msg.id)
-                if force_complete_todos(session_id):
-                    log.info("[%s] 达到最大轮次 — 自动完成剩余待办任务", sid)
 
         except Exception as exc:
             log.error("[%s] Agent循环异常: %s", sid, exc, exc_info=True)
