@@ -56,6 +56,13 @@ async def execute_cron_job(
         log.warning("[cron] 任务已失效，跳过: job_id=%s", job_id)
         return {"status": "skipped", "reason": "job not valid"}
 
+    # Prevent duplicate execution: refuse if this job already has a running CronRun
+    existing_runs = await cron_run_dao.list_runs(job.id, limit=5)
+    for r in existing_runs:
+        if r.status == "running":
+            log.warning("[cron] 任务已有运行中的执行记录，跳过: job_id=%s run_id=%s", job_id, r.id)
+            return {"status": "skipped", "reason": "job already running", "run_id": r.id}
+
     log.info(
         "[cron] 接收任务: job_id=%s employee_id=%s 名称='%s' cron='%s' prompt长度=%d",
         job_id, employee_id, job.name, job.cron_expr, len(job.prompt),
@@ -110,10 +117,10 @@ async def execute_cron_job(
                 break
         log.info("[cron] 结果提取完成: 长度=%d", len(result_content))
 
-        # 检查文件产物
+        # 检查文件产物（支持多文件）
         from app.models.models import ArtifactFile
         from sqlalchemy import select
-        file_id = None
+        artifact_files: list = []
         async with sf() as session:
             file_result = await session.execute(
                 select(ArtifactFile).where(
@@ -122,19 +129,33 @@ async def execute_cron_job(
                     ArtifactFile.source_type == "cron_job",
                 )
             )
-            file_obj = file_result.scalar_one_or_none()
-            if file_obj:
-                file_id = file_obj.id
-                log.info("[cron] 文件产物: file_id=%s 文件名=%s", file_id, file_obj.filename)
+            artifact_files = list(file_result.scalars().all())
+
+        first_file_id = artifact_files[0].id if artifact_files else None
+        if artifact_files:
+            log.info(
+                "[cron] 文件产物: %d 个文件: %s",
+                len(artifact_files),
+                ", ".join(f.file_name for f in artifact_files),
+            )
+
+        # 构造通知内容（追加文件下载链接）
+        notification_content = result_content or "(无输出)"
+        if artifact_files:
+            links = "\n".join(
+                f"- [{f.file_name}](/bx/api/v1/files/{f.id}/download)"
+                for f in artifact_files
+            )
+            notification_content += f"\n\n---\n### 生成的文件\n{links}"
 
         # 创建通知 + 推送 SSE
         title = f"Cron: {job.name}"
         notif = await notif_dao.create(
             title=title,
-            content=result_content or "(无输出)",
+            content=notification_content,
             source="cron",
             cron_job_id=job.id,
-            file_id=file_id,
+            file_id=first_file_id,
         )
         log.info("[cron] 通知已创建: notif_id=%s 标题='%s'", notif.id, title)
 
@@ -143,11 +164,12 @@ async def execute_cron_job(
             "title": title,
             "source": "cron",
             "cron_job_id": job.id,
+            "file_id": first_file_id,
         })
         log.info("[cron] SSE 已推送: employee_id=%d", employee_id)
 
         summary = result_content[:2000] if result_content else None
-        await cron_run_dao.mark_success(run.id, result_summary=summary, file_id=file_id)
+        await cron_run_dao.mark_success(run.id, result_summary=summary, file_id=first_file_id)
         await actor_dao.mark_run(job.id, success=True)
 
         log.info(

@@ -1,3 +1,4 @@
+import { memo, useCallback } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import type { SessionItem } from "@/types/api-types";
 
@@ -7,13 +8,6 @@ const formatTime = (iso: string) => {
   return `此会话由${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}创建`;
 };
 
-interface ChatSidebarProps {
-  sessions: SessionItem[];
-  activeSessionId: string | null;
-  onSelect: (session: SessionItem) => void;
-  onNewChat: () => void;
-}
-
 const NAV_ITEMS = [
   { label: "SKILLS", path: "/skills" },
   { label: "SUBAGENTS", path: "/subagents" },
@@ -21,6 +15,58 @@ const NAV_ITEMS = [
   { label: "CRON", path: "/cron" },
   { label: "NOTIFICATIONS", path: "/notifications" },
 ] as const;
+
+interface ChatSidebarProps {
+  sessions: SessionItem[];
+  activeSessionId: string | null;
+  onSelect: (session: SessionItem) => void;
+  onNewChat: () => void;
+}
+
+const SessionListItem = memo(function SessionListItem({
+  session,
+  isActive,
+  onSelect,
+}: {
+  session: SessionItem;
+  isActive: boolean;
+  onSelect: (s: SessionItem) => void;
+}) {
+  const handleClick = useCallback(() => onSelect(session), [onSelect, session]);
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (e.key === "Enter") onSelect(session);
+    },
+    [onSelect, session],
+  );
+
+  return (
+    <li>
+      <div
+        className={`rounded-lg border p-3 transition-colors cursor-pointer ${
+          isActive
+            ? "bg-[var(--color-primary-dim)] border-[var(--color-primary)] glow-primary"
+            : "bg-[var(--color-surface)] border-[var(--color-border-dim)] hover:border-[var(--color-border)] hover:bg-[var(--color-primary-dim)]"
+        }`}
+        onClick={handleClick}
+        role="button"
+        tabIndex={0}
+        onKeyDown={handleKeyDown}
+        aria-label={`切换到对话: ${session.title || "未命名"}`}
+      >
+        <div className="flex items-center gap-2">
+          <span className={`inline-block w-2 h-2 rounded-full shrink-0 ${
+            isActive ? 'bg-[var(--color-primary)]' : 'bg-[var(--color-text-tertiary)]'
+          }`} />
+          <span className="truncate text-sm font-medium">{session.title || "UNTITLED"}</span>
+        </div>
+        <div className="text-[0.6rem] text-[var(--color-text-tertiary)] mt-2 font-mono">
+          {formatTime(session.created_at)}
+        </div>
+      </div>
+    </li>
+  );
+});
 
 export function ChatSidebar({ sessions, activeSessionId, onSelect, onNewChat }: ChatSidebarProps) {
   const navigate = useNavigate();
@@ -49,30 +95,12 @@ export function ChatSidebar({ sessions, activeSessionId, onSelect, onNewChat }: 
           </li>
         )}
         {sessions.map((s) => (
-          <li key={s.session_id}>
-            <div
-              className={`rounded-lg border p-3 transition-colors cursor-pointer ${
-                s.session_id === activeSessionId
-                  ? "bg-[var(--color-primary-dim)] border-[var(--color-primary)] glow-primary"
-                  : "bg-[var(--color-surface)] border-[var(--color-border-dim)] hover:border-[var(--color-border)] hover:bg-[var(--color-primary-dim)]"
-              }`}
-              onClick={() => onSelect(s)}
-              role="button"
-              tabIndex={0}
-              onKeyDown={(e) => { if (e.key === "Enter") onSelect(s); }}
-              aria-label={`切换到对话: ${s.title || "未命名"}`}
-            >
-              <div className="flex items-center gap-2">
-                <span className={`inline-block w-2 h-2 rounded-full shrink-0 ${
-                  s.session_id === activeSessionId ? 'bg-[var(--color-primary)]' : 'bg-[var(--color-text-tertiary)]'
-                }`} />
-                <span className="truncate text-sm font-medium">{s.title || "UNTITLED"}</span>
-              </div>
-              <div className="text-[0.6rem] text-[var(--color-text-tertiary)] mt-2 font-mono">
-                {formatTime(s.created_at)}
-              </div>
-            </div>
-          </li>
+          <SessionListItem
+            key={s.session_id}
+            session={s}
+            isActive={s.session_id === activeSessionId}
+            onSelect={onSelect}
+          />
         ))}
       </ul>
 

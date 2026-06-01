@@ -121,6 +121,27 @@ def _emit(session_id: str, event_type: SSEEventType, data: dict) -> None:
     push_event(session_id, event_type, data)
 
 
+def force_complete_todos(session_id: str) -> bool:
+    """Auto-complete any remaining pending/in_progress todos and emit plan_complete.
+
+    Called when the LLM produces a final answer without marking all tasks as
+    completed — this ensures the frontend always sees the plan finish.
+
+    Returns True if any todos were auto-completed.
+    """
+    todos = _SESSION_TODOS.get(session_id, [])
+    if not todos:
+        return False
+
+    if all(t["status"] == "completed" for t in todos):
+        return False
+
+    completed_todos = [{**t, "status": "completed"} for t in todos]
+    _SESSION_TODOS[session_id] = completed_todos
+    _diff_and_emit(session_id, todos, completed_todos)
+    return True
+
+
 def _diff_and_emit(session_id: str, old_todos: list[dict], new_todos: list[dict]) -> None:
     """Compare old vs new todos, emit SSE plan events, and log detailed plan state."""
     sid = session_id[:8]
@@ -264,9 +285,8 @@ async def execute_with_session(args_str: str, employee_id: int, session_id: str)
 
     old_todos = get_session_todos(session_id)
 
-    # Store new state (clear list if all completed — CC behavior)
-    all_done = bool(new_todos) and all(t["status"] == "completed" for t in new_todos)
-    _SESSION_TODOS[session_id] = [] if all_done else new_todos
+    # Store new state — keep completed todos so agent loop can detect completion
+    _SESSION_TODOS[session_id] = new_todos
 
     # Emit SSE plan events
     try:

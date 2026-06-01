@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import type React from "react";
 import { MessageBubble } from "@/components/base/MessageBubble";
 import { ThinkingBlock } from "@/components/base/ThinkingBlock";
@@ -51,11 +51,11 @@ export function MessageFlow({
 
   // Hide internal messages: tool execution results and empty intermediate assistant calls
   // Keep system messages that are compression summaries (identified by prefix)
-  const visibleMessages = messages.filter((msg) => {
+  const visibleMessages = useMemo(() => messages.filter((msg) => {
     if (msg.role === "tool") return false;
     if (msg.role === "assistant" && !msg.content?.trim() && !msg.reasoning_content) return false;
     return true;
-  });
+  }), [messages]);
 
   // Auto-scroll to bottom when history loads or streaming updates
   useEffect(() => {

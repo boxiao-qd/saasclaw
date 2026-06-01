@@ -3,6 +3,45 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
 import { useNotificationStore } from "@/store/notification-store";
+import { getAccessToken } from "@/services/api-client";
+
+const remarkPlugins = [remarkGfm];
+const rehypePlugins = [rehypeHighlight];
+
+function getFileIcon(filename: string): string {
+  const ext = filename.split(".").pop()?.toLowerCase() ?? "";
+  const icons: Record<string, string> = {
+    pptx: "📊", ppt: "📊", md: "📝", pdf: "📄", xlsx: "📈", xls: "📈",
+    csv: "📋", docx: "📃", doc: "📃", txt: "📝", json: "📋",
+    html: "🌐", png: "🖼️", jpg: "🖼️", jpeg: "🖼️", gif: "🖼️", svg: "🖼️",
+    py: "🐍", js: "📜", ts: "📜", zip: "📦", xml: "📋",
+  };
+  return icons[ext] ?? "📎";
+}
+
+async function downloadFile(fileId: string, fileName: string) {
+  const token = getAccessToken();
+  const headers: Record<string, string> = {};
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+  try {
+    const resp = await fetch(`/bx/api/v1/files/${fileId}/download`, { headers });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({ message: "Download failed" }));
+      throw new Error(err.detail || err.message || `HTTP ${resp.status}`);
+    }
+    const blob = await resp.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  } catch (e) {
+    alert(`Download failed: ${e instanceof Error ? e.message : "Unknown error"}`);
+  }
+}
 
 export function NotificationPage() {
   const { notifications, loading, selectedId, fetchNotifications, markRead, markAllRead, deleteNotification, select } = useNotificationStore();
@@ -47,7 +86,7 @@ export function NotificationPage() {
               }}
               className={`w-full text-left p-3 border-b border-[var(--color-border-dim)]
                          hover:bg-[var(--color-surface-dark)] transition-colors
-                         ${selectedId === n.id ? "bg-[var(--color-primary-dim)]" : ""}
+                         ${selectedId === n.id ? "bg-[var(--color-primary-dim)] border-l-[3px] border-l-[var(--color-primary)] pl-[9px]" : "border-l-[3px] border-l-transparent pl-3"}
                          ${n.is_read === 0 ? "font-semibold" : "opacity-70"}`}
             >
               <div className="flex items-start gap-2">
@@ -84,10 +123,56 @@ export function NotificationPage() {
             </div>
             <div className="flex-1 overflow-y-auto p-4">
               <div className="text-sm text-[var(--color-text)] leading-relaxed prose prose-sm prose-invert max-w-none">
-                <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
+                <ReactMarkdown remarkPlugins={remarkPlugins} rehypePlugins={rehypePlugins}>
                   {selectedNotif.content}
                 </ReactMarkdown>
               </div>
+              {selectedNotif.file_id && selectedNotif.file_name && (
+                <div className="mt-6 rounded-lg border-2 border-[var(--color-primary)] bg-[var(--color-primary-dim)] p-4">
+                  <div className="flex items-center gap-3">
+                    <span className="text-2xl">
+                      {getFileIcon(selectedNotif.file_name)}
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs text-[var(--color-text-dim)] font-mono uppercase tracking-wide">
+                        Attached File
+                      </p>
+                      <p className="text-sm font-mono font-semibold text-[var(--color-text)] truncate">
+                        {selectedNotif.file_name}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => downloadFile(selectedNotif.file_id!, selectedNotif.file_name!)}
+                      className="shrink-0 px-4 py-2 rounded-md bg-[var(--color-primary)] text-white text-sm font-mono font-semibold
+                                 hover:brightness-110 active:scale-95 transition-all"
+                    >
+                      Download
+                    </button>
+                  </div>
+                </div>
+              )}
+              {selectedNotif.file_id && !selectedNotif.file_name && (
+                <div className="mt-6 rounded-lg border-2 border-[var(--color-primary)] bg-[var(--color-primary-dim)] p-4">
+                  <div className="flex items-center gap-3">
+                    <span className="text-2xl">📎</span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs text-[var(--color-text-dim)] font-mono uppercase tracking-wide">
+                        Attached File
+                      </p>
+                      <p className="text-sm font-mono text-[var(--color-text-dim)]">
+                        File available for download
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => downloadFile(selectedNotif.file_id!, "download")}
+                      className="shrink-0 px-4 py-2 rounded-md bg-[var(--color-primary)] text-white text-sm font-mono font-semibold
+                                 hover:brightness-110 active:scale-95 transition-all"
+                    >
+                      Download
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </>
         ) : (

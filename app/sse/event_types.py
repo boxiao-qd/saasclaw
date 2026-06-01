@@ -105,6 +105,7 @@ class NotificationNewData(BaseModel):
     title: str
     source: str
     cron_job_id: Optional[str] = None
+    file_id: Optional[str] = None
 
 class ContextCompressionData(BaseModel):
     tokens_before: int

@@ -1,5 +1,11 @@
 import { useEffect, useState } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import rehypeHighlight from "rehype-highlight";
 import { apiGet, apiDelete, getAccessToken } from "@/services/api-client";
+
+const remarkPlugins = [remarkGfm];
+const rehypePlugins = [rehypeHighlight];
 
 interface FileItem {
   id: string;
@@ -35,6 +41,11 @@ function fileIcon(name: string): string {
   return "📁";
 }
 
+function isPreviewable(name: string): boolean {
+  const ext = name.split(".").pop()?.toLowerCase() ?? "";
+  return ext === "md";
+}
+
 export function FilesPage() {
   const [files, setFiles] = useState<FileItem[]>([]);
   const [total, setTotal] = useState(0);
@@ -43,6 +54,12 @@ export function FilesPage() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+
+  // Preview state
+  const [previewFile, setPreviewFile] = useState<FileItem | null>(null);
+  const [previewContent, setPreviewContent] = useState<string>("");
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState("");
 
   const loadFiles = async () => {
     setLoading(true);
@@ -82,6 +99,35 @@ export function FilesPage() {
     } finally {
       setDownloadingId(null);
     }
+  };
+
+  const handlePreview = async (file: FileItem) => {
+    setPreviewFile(file);
+    setPreviewContent("");
+    setPreviewError("");
+    setPreviewLoading(true);
+    try {
+      const token = getAccessToken();
+      const res = await fetch(`/bx/api/v1/files/${file.id}/content`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: "加载失败" }));
+        throw new Error(err.detail || `HTTP ${res.status}`);
+      }
+      const text = await res.text();
+      setPreviewContent(text);
+    } catch (e: any) {
+      setPreviewError(e?.message ?? "加载失败");
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
+
+  const closePreview = () => {
+    setPreviewFile(null);
+    setPreviewContent("");
+    setPreviewError("");
   };
 
   const handleDelete = async (id: string) => {
@@ -172,6 +218,14 @@ export function FilesPage() {
 
                 {/* Actions */}
                 <div className="flex items-center gap-2 flex-shrink-0">
+                  {isPreviewable(file.file_name) && (
+                    <button
+                      onClick={() => handlePreview(file)}
+                      className="px-3 py-1 text-xs rounded border border-[var(--color-border)] text-[var(--color-primary)] hover:bg-[var(--color-primary)] hover:text-white transition-colors"
+                    >
+                      预览
+                    </button>
+                  )}
                   <button
                     onClick={() => handleDownload(file)}
                     disabled={downloadingId === file.id}
@@ -210,6 +264,60 @@ export function FilesPage() {
           </ul>
         )}
       </div>
+
+      {/* Preview Modal */}
+      {previewFile && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={closePreview}>
+          <div
+            className="bg-[var(--color-surface)] rounded-xl border border-[var(--color-border)] w-full max-w-3xl max-h-[85vh] flex flex-col m-4 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--color-border)]">
+              <h2 className="text-[var(--color-text)] text-sm font-bold truncate mr-4">
+                {previewFile.file_name}
+              </h2>
+              <button
+                onClick={closePreview}
+                className="text-[var(--color-text-tertiary)] hover:text-[var(--color-text)] text-lg leading-none px-2 transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Modal body */}
+            <div className="flex-1 overflow-y-auto px-6 py-4">
+              {previewLoading && (
+                <p className="text-[var(--color-text-tertiary)] text-xs text-center py-12">加载中...</p>
+              )}
+              {previewError && (
+                <p className="text-red-400 text-xs text-center py-12">{previewError}</p>
+              )}
+              {!previewLoading && !previewError && previewContent && (
+                <div className="prose prose-invert prose-sm max-w-none
+                  prose-headings:text-[var(--color-text)]
+                  prose-p:text-[var(--color-text-secondary)]
+                  prose-a:text-[var(--color-primary)]
+                  prose-code:text-[var(--color-primary)] prose-code:bg-[var(--color-surface-alt)] prose-code:px-1 prose-code:py-0.5 prose-code:rounded
+                  prose-pre:bg-[var(--color-surface-alt)] prose-pre:border prose-pre:border-[var(--color-border)]
+                  prose-li:text-[var(--color-text-secondary)]
+                  prose-strong:text-[var(--color-text)]
+                  prose-th:text-[var(--color-text)] prose-td:text-[var(--color-text-secondary)]
+                  prose-blockquote:text-[var(--color-text-tertiary)] prose-blockquote:border-[var(--color-primary)]
+                  prose-hr:border-[var(--color-border)]
+                  [&_pre_code]:text-[var(--color-text)]">
+                  <ReactMarkdown remarkPlugins={remarkPlugins} rehypePlugins={rehypePlugins}>
+                    {previewContent}
+                  </ReactMarkdown>
+                </div>
+              )}
+              {!previewLoading && !previewError && !previewContent && (
+                <p className="text-[var(--color-text-tertiary)] text-xs text-center py-12">文件内容为空</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

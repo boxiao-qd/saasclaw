@@ -2,6 +2,7 @@
 
 import logging
 import os
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response, StreamingResponse
@@ -78,12 +79,52 @@ async def download_file(
         log.error("MinIO download failed for key %s: %s", f.minio_key, e)
         raise HTTPException(status_code=502, detail="Failed to retrieve file from storage")
 
-    safe_name = f.file_name.replace('"', "'")
+    safe_name = f.file_name.replace('"', "'").replace("\r", "").replace("\n", "")
+    encoded_name = quote(safe_name, safe="")
     return Response(
         content=data,
         media_type=content_type,
-        headers={"Content-Disposition": f'attachment; filename="{safe_name}"'},
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{encoded_name}"},
     )
+
+
+@router.get("/{file_id}/content")
+async def get_file_content(
+    file_id: str,
+    employee_id: int = Depends(get_employee_id),
+):
+    """Return file content as inline text for preview (text-based files only)."""
+    dao = ArtifactFileDAO(get_session_factory(), employee_id)
+    f = await dao.get_by_id(file_id)
+    if not f:
+        raise HTTPException(status_code=404, detail="File not found")
+
+    # Only allow text-based files for inline preview
+    ext = os.path.splitext(f.file_name)[1].lower()
+    text_extensions = {".md", ".txt", ".py", ".js", ".ts", ".tsx", ".jsx",
+                       ".json", ".xml", ".html", ".css", ".yaml", ".yml",
+                       ".toml", ".ini", ".cfg", ".sh", ".bat", ".sql",
+                       ".csv", ".log", ".env", ".gitignore", ".dockerignore"}
+    if ext not in text_extensions:
+        raise HTTPException(status_code=415, detail=f"Preview not supported for {ext} files")
+
+    bucket = settings.object_storage_bucket
+    try:
+        s3 = _s3_client()
+        resp = s3.get_object(Bucket=bucket, Key=f.minio_key)
+        data = resp["Body"].read()
+    except Exception as e:
+        log.error("MinIO read failed for key %s: %s", f.minio_key, e)
+        raise HTTPException(status_code=502, detail="Failed to retrieve file from storage")
+
+    # Determine content type
+    content_type_map = {
+        ".md": "text/markdown; charset=utf-8",
+        ".html": "text/html; charset=utf-8",
+    }
+    content_type = content_type_map.get(ext, "text/plain; charset=utf-8")
+
+    return Response(content=data, media_type=content_type)
 
 
 @router.delete("/{file_id}")

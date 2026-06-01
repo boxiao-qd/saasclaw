@@ -69,10 +69,10 @@ async def execute_job(job) -> None:
                 result_content = msg.content
                 break
 
-        # Check for file artifacts in the session
+        # Check for file artifacts in the session (support multiple files)
         from app.models.models import ArtifactFile
         from sqlalchemy import select
-        file_id = None
+        artifact_files = []
         async with sf() as session:
             file_result = await session.execute(
                 select(ArtifactFile).where(
@@ -81,23 +81,32 @@ async def execute_job(job) -> None:
                     ArtifactFile.source_type == "cron_job",
                 )
             )
-            file_obj = file_result.scalar_one_or_none()
-            if file_obj:
-                file_id = file_obj.id
+            artifact_files = list(file_result.scalars().all())
+
+        first_file_id = artifact_files[0].id if artifact_files else None
+
+        # Build notification content with file download links
+        notif_content = result_content or "(no output)"
+        if artifact_files:
+            links = "\n".join(
+                f"- [{f.file_name}](/bx/api/v1/files/{f.id}/download)"
+                for f in artifact_files
+            )
+            notif_content += f"\n\n---\n### Generated Files\n{links}"
 
         # Create notification
         title = f"Cron: {job.name}"
         notif = await notif_dao.create(
             title=title,
-            content=result_content or "(no output)",
+            content=notif_content,
             source="cron",
             cron_job_id=job.id,
-            file_id=file_id,
+            file_id=first_file_id,
         )
 
         # Mark run as success
         summary = result_content[:2000] if result_content else None
-        await cron_run_dao.mark_success(run.id, result_summary=summary, file_id=file_id)
+        await cron_run_dao.mark_success(run.id, result_summary=summary, file_id=first_file_id)
 
         # Push SSE notification
         push_user_event(employee_id, SSEEventType.notification_new, {
@@ -105,6 +114,7 @@ async def execute_job(job) -> None:
             "title": title,
             "source": "cron",
             "cron_job_id": job.id,
+            "file_id": first_file_id,
         })
 
         # Mark job as run successfully

@@ -7,6 +7,8 @@ export interface NotificationItem {
   content: string;
   source: string;
   cron_job_id?: string;
+  file_id?: string | null;
+  file_name?: string | null;
   is_read: number;
   created_at: string;
 }

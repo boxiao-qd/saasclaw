@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { memo, useCallback, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
@@ -9,13 +9,16 @@ import { useMessageStore } from "@/store/message-store";
 import { ThinkingBlock } from "@/components/base/ThinkingBlock";
 import { ToolCallBlock } from "@/components/base/ToolCallBlock";
 
+const remarkPlugins = [remarkGfm];
+const rehypePlugins = [rehypeHighlight];
+
 interface MessageBubbleProps {
   message: MessageItem;
   thinkingBlock?: ThinkingBlockState;
   toolCallBlocks?: ToolCallBlockState[];
 }
 
-export function MessageBubble({ message, thinkingBlock, toolCallBlocks }: MessageBubbleProps) {
+export const MessageBubble = memo(function MessageBubble({ message, thinkingBlock, toolCallBlocks }: MessageBubbleProps) {
   const isUser = message.role === "user";
   const isTool = message.role === "tool";
   const toggleThinking = useMessageStore((s) => s.toggleThinking);
@@ -102,7 +105,7 @@ export function MessageBubble({ message, thinkingBlock, toolCallBlocks }: Messag
         {/* Markdown content */}
         {message.content && (
           <div className="md-content">
-            <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
+            <ReactMarkdown remarkPlugins={remarkPlugins} rehypePlugins={rehypePlugins}>
               {message.content}
             </ReactMarkdown>
           </div>
@@ -110,4 +113,4 @@ export function MessageBubble({ message, thinkingBlock, toolCallBlocks }: Messag
       </div>
     </div>
   );
-}
+});

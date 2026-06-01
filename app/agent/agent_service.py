@@ -16,7 +16,7 @@ from app.agent.tools import get_tool_definitions, get_tool_executor
 from app.agent.context_loader import ContextLoader
 from app.agent.memory_distiller import MemoryDistiller
 from app.agent.context_compressor import compress_if_needed
-from app.agent.tools.todo_write import todo_summary_for_llm
+from app.agent.tools.todo_write import get_session_todos, todo_summary_for_llm
 from app.config import settings
 
 log = logging.getLogger(__name__)
@@ -189,18 +189,33 @@ class AgentService:
 
                 log.info("[%s] 第%d轮 — 调用LLM（消息数=%d 估算=%dtokens）",
                          sid, iteration, len(llm_messages), estimated_tokens)
-                # Inject current todo progress into system message so LLM sees it
+                # Inject current todo progress into system message so LLM sees it.
+                # When all todos are completed, prompt the LLM to produce final answer.
+                effective_tool_defs = tool_defs
                 if base_system_prompt and llm_messages and llm_messages[0]["role"] == "system":
-                    todo_ctx = todo_summary_for_llm(session_id)
-                    if todo_ctx:
-                        log.info("[%s] 第%d轮 — 注入 Todo 上下文到 LLM:\n%s", sid, iteration, todo_ctx)
-                        llm_messages[0]["content"] = base_system_prompt + "\n\n" + todo_ctx
+                    todos = get_session_todos(session_id)
+                    if todos and all(t.get("status") == "completed" for t in todos):
+                        llm_messages[0]["content"] = (
+                            base_system_prompt
+                            + "\n\n所有任务已完成，请直接给出最终的文字回答，不要调用任何工具。"
+                        )
+                        # Remove TodoWrite to prevent the model from looping on it
+                        if effective_tool_defs:
+                            effective_tool_defs = [
+                                t for t in effective_tool_defs
+                                if t.get("function", {}).get("name") != "TodoWrite"
+                            ]
                     else:
-                        llm_messages[0]["content"] = base_system_prompt
+                        todo_ctx = todo_summary_for_llm(session_id)
+                        if todo_ctx:
+                            log.info("[%s] 第%d轮 — 注入 Todo 上下文到 LLM:\n%s", sid, iteration, todo_ctx)
+                            llm_messages[0]["content"] = base_system_prompt + "\n\n" + todo_ctx
+                        else:
+                            llm_messages[0]["content"] = base_system_prompt
                 stream = await self._llm_router.chat(
                     model=model,
                     messages=llm_messages,
-                    tools=tool_defs,
+                    tools=effective_tool_defs,
                     stream=True,
                 )
                 log.info("[%s] 第%d轮 — 流式响应已建立", sid, iteration)
@@ -417,6 +432,14 @@ class AgentService:
 
                     log.info("[%s] 第%d轮 — 工具结果已就绪，继续循环（%d个工具调用）",
                              sid, iteration, len(tool_calls_accum))
+                    # When all todos are completed, prompt LLM to produce final answer
+                    todos = get_session_todos(session_id)
+                    if todos and all(t.get("status") == "completed" for t in todos):
+                        log.info("[%s] 第%d轮 — 所有任务已完成，提示LLM给出最终回答", sid, iteration)
+                        llm_messages.append({
+                            "role": "user",
+                            "content": "所有任务已完成，请直接给出最终的文字回答，不要再调用任何工具。",
+                        })
                     # Check max executions — the counter was already incremented above
                     if execution_count >= max_iterations:
                         log.warning("[%s] 达到最大执行次数 %d，强制终止", sid, max_iterations)
@@ -851,5 +874,9 @@ class AgentService:
         if tool_name == "TodoWrite":
             from app.agent.tools.todo_write import execute_with_session as todo_execute
             return await todo_execute(args_str, self._employee_id, session_id)
+
+        if tool_name == "create_artifact":
+            from app.agent.tools.create_artifact import execute_with_session as ca_execute
+            return await ca_execute(args_str, self._employee_id, session_id)
 
         return await executor(args_str, self._employee_id)
