@@ -114,7 +114,7 @@ async def execute(args_str: str, employee_id: int) -> str:
             status = item.get("status", "pending")
             if status not in VALID_STATUSES:
                 status = "pending"
-            await dao.create(title=content, priority=0, todo_id=id_)
+            await dao.create(title=content, priority=0)
 
     current_todos = await dao.list_todos()
     items = [_to_dict(t) for t in current_todos]

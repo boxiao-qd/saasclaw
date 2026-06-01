@@ -37,8 +37,25 @@ class TodoDAO(BaseDAO):
     ) -> TodoModel:
         session = self._session()
         import json
+        obj_id = todo_id or str(uuid.uuid4())
+
+        # If the ID already exists (e.g. soft-deleted), reactivate and update it
+        existing = await session.get(TodoModel, obj_id)
+        if existing is not None:
+            existing.is_deleted = 0
+            existing.title = title
+            existing.description = description
+            existing.priority = priority
+            existing.session_id = session_id
+            existing.parent_id = parent_id
+            existing.tags = json.dumps(tags) if tags else None
+            await session.commit()
+            await session.refresh(existing)
+            await session.close()
+            return existing
+
         obj = TodoModel(
-            id=todo_id or str(uuid.uuid4()),
+            id=obj_id,
             employee_id=self._employee_id,
             session_id=session_id,
             title=title,

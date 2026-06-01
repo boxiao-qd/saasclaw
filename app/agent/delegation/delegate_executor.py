@@ -2,6 +2,7 @@
 
 import json
 import time
+import uuid
 import logging
 from app.dao.message_dao import MessageDAO
 from app.api.v1.stream import push_event
@@ -58,12 +59,15 @@ class DelegateExecutor:
         model = agent_def.model if agent_def.model and agent_def.model != "inherit" else settings.default_delegate_model
         max_turns = agent_def.max_turns
 
+        delegation_id = str(uuid.uuid4())[:8]
+
         # Push delegation_start
         push_event(parent_session_id, SSEEventType.delegation_start, {
             "subagent_name": agent_type,
             "goal": goal,
             "context": context,
             "max_turns": max_turns,
+            "child_session_id": delegation_id,
         })
 
         # Run sub-agent loop — pure memory, no DB writes for internal messages
@@ -77,6 +81,7 @@ class DelegateExecutor:
                 "status": "running",
                 "progress_note": f"Iteration {iteration + 1}",
                 "elapsed_seconds": int(time.time()),
+                "child_session_id": delegation_id,
             })
 
             try:
@@ -141,6 +146,7 @@ class DelegateExecutor:
                     "subagent_name": agent_type,
                     "summary": f"Delegation failed: {exc}",
                     "is_error": True,
+                    "child_session_id": delegation_id,
                 })
                 return f"Sub-agent '{agent_type}' failed: {exc}. Please retry or handle this task yourself."
 
@@ -149,6 +155,7 @@ class DelegateExecutor:
             "subagent_name": agent_type,
             "summary": summary or "Task completed with no summary",
             "is_error": False,
+            "child_session_id": delegation_id,
         })
 
         # Write summary into parent session history

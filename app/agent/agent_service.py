@@ -16,7 +16,7 @@ from app.agent.tools import get_tool_definitions, get_tool_executor
 from app.agent.context_loader import ContextLoader
 from app.agent.memory_distiller import MemoryDistiller
 from app.agent.context_compressor import compress_if_needed
-from app.agent.tools.todo_write import get_session_todos, todo_summary_for_llm
+from app.agent.tools.todo_write import get_session_todos, todo_summary_for_llm, force_complete_todos
 from app.config import settings
 
 log = logging.getLogger(__name__)
@@ -63,11 +63,12 @@ _TOOL_RESULT_HARD_CHARS = 100        # chars per old result after hard trim
 _CHARS_PER_TOKEN = 3.5             # rough estimate for mixed Chinese/HTML
 _TOKEN_GUARD_LIMIT = 160_000       # pre-flight abort threshold (well below 196K model limit)
 
-# Tools that only read data — safe to execute concurrently in the same iteration.
-_READ_ONLY_TOOLS = frozenset({
+# Tools safe to execute concurrently — read-only or independent side effects.
+_CONCURRENT_TOOLS = frozenset({
     "web_search", "web_fetch", "file_read", "file_search",
     "session_search", "memory_query", "clarify",
     "skills_list", "skill_view",
+    "spawn_subagent",
 })
 
 
@@ -499,6 +500,11 @@ class AgentService:
                 })
                 log.info("[%s] message_done事件已推送 — msg_id=%s streaming_id=%s", sid, final_msg.id, assistant_id)
 
+                # Safety net: auto-complete remaining todos if the model
+                # produced a final answer without marking all tasks as completed.
+                if force_complete_todos(session_id):
+                    log.info("[%s] 第%d轮 — 自动完成剩余待办任务", sid, iteration)
+
                 # session end: per-turn distillation → short_term, then consolidate → long_term
                 try:
                     distiller = MemoryDistiller(self._employee_id, self._session_factory)
@@ -552,6 +558,8 @@ class AgentService:
                     "stop_reason": "max_iterations",
                 })
                 log.info("[%s] message_done事件已推送（最大轮次）— msg_id=%s", sid, final_msg.id)
+                if force_complete_todos(session_id):
+                    log.info("[%s] 达到最大轮次 — 自动完成剩余待办任务", sid)
 
         except Exception as exc:
             log.error("[%s] Agent循环异常: %s", sid, exc, exc_info=True)
@@ -619,8 +627,8 @@ class AgentService:
 
         Read-only tools run concurrently; write tools run serially after.
         """
-        read_only = [tc for tc in tool_calls if tc["name"] in _READ_ONLY_TOOLS]
-        write_ops = [tc for tc in tool_calls if tc["name"] not in _READ_ONLY_TOOLS]
+        read_only = [tc for tc in tool_calls if tc["name"] in _CONCURRENT_TOOLS]
+        write_ops = [tc for tc in tool_calls if tc["name"] not in _CONCURRENT_TOOLS]
 
         if read_only:
             results = await asyncio.gather(
@@ -713,7 +721,8 @@ class AgentService:
             "- 同一时刻只允许一个步骤处于 in_progress\n"
             "- 完成后立即标为 completed，不要拖延\n"
             "- 每步完成后观察结果，如后续步骤需要调整，重新调用 TodoWrite 替换整个列表\n"
-            "- 未完成的步骤绝对不能标为 completed\n\n"
+            "- 未完成的步骤绝对不能标为 completed\n"
+            "- **在给出最终回答前，必须调用 TodoWrite 将所有步骤标为 completed**\n\n"
             "**TodoWrite 参数格式：**\n"
             "- content: 动词开头，如「搜索天气数据」\n"
             "- activeForm: 进行时，如「正在搜索天气数据」\n"
