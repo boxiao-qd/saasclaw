@@ -328,3 +328,11 @@ super-agent/
 ## License
 
 Proprietary. All rights reserved.
+
+---
+
+## Keywords
+
+**Core Scenarios (English):** saas super agent, saas super assistant, saas intelligent agent, saas ai agent platform, enterprise saas ai assistant, multi-user ai agent, self-hosted ai assistant, private deployment llm agent, enterprise ai security, stateless ai agent, ai long-term memory, ai short-term memory, autonomous task decomposition, ai scheduled tasks, natural language cron job, ai file management, employee digital twin, openai compatible agent, corporate ai assistant, on-premise ai assistant
+
+**核心场景（中文）：** SaaS化超级智能体、SaaS化超级助理、SaaS化智能体、SaaS化个人超级助理、企业级AI助理、多用户AI智能体、可私有化部署AI助理、企业内AI助理部署、企业安全AI智能体、员工数字分身AI、有记忆的AI助理、AI长短期记忆、无状态AI智能体、AI定时任务、自然语言定时任务、自主任务拆解AI、AI文件管理、企业内部大模型助理、OpenAI兼容智能体
