@@ -195,6 +195,61 @@ start_infra() {
     done
 }
 
+# ── 初始化 MinIO bucket ─────────────────────────────────
+init_minio() {
+    step "初始化 MinIO 对象存储"
+
+    # 从 .env 读取配置
+    local endpoint access_key secret_key bucket
+    endpoint=$(grep  "^OBJECT_STORAGE_ENDPOINT=" "$PROJECT_ROOT/.env" | cut -d'=' -f2-)
+    access_key=$(grep "^OBJECT_STORAGE_ACCESS_KEY=" "$PROJECT_ROOT/.env" | cut -d'=' -f2-)
+    secret_key=$(grep "^OBJECT_STORAGE_SECRET_KEY=" "$PROJECT_ROOT/.env" | cut -d'=' -f2-)
+    bucket=$(grep   "^OBJECT_STORAGE_BUCKET="   "$PROJECT_ROOT/.env" | cut -d'=' -f2-)
+
+    endpoint="${endpoint:-http://localhost:9002}"
+    access_key="${access_key:-minioadmin}"
+    secret_key="${secret_key:-minioadmin123}"
+    bucket="${bucket:-super-agent}"
+
+    info "等待 MinIO 就绪 ($endpoint)..."
+    for i in $(seq 1 20); do
+        if curl -sf "$endpoint/minio/health/live" >/dev/null 2>&1; then
+            info "MinIO 已就绪"
+            break
+        fi
+        if [ $i -eq 20 ]; then
+            err "MinIO 启动超时"
+            exit 1
+        fi
+        sleep 2
+    done
+
+    info "检查并创建 bucket: $bucket ..."
+    "$PROJECT_ROOT/.venv/bin/python" - <<PYEOF
+import sys
+try:
+    import boto3
+    from botocore.exceptions import ClientError
+    s3 = boto3.client(
+        "s3",
+        aws_access_key_id="$access_key",
+        aws_secret_access_key="$secret_key",
+        region_name="us-east-1",
+        endpoint_url="$endpoint",
+    )
+    try:
+        s3.head_bucket(Bucket="$bucket")
+        print("  bucket '$bucket' already exists")
+    except ClientError:
+        s3.create_bucket(Bucket="$bucket")
+        print("  bucket '$bucket' created")
+except Exception as e:
+    print(f"  Warning: MinIO bucket init failed: {e}", file=sys.stderr)
+    sys.exit(1)
+PYEOF
+    info "MinIO bucket 初始化完成"
+}
+
 # ── 启动 FastAPI ────────────────────────────────────────
 start_fastapi() {
     step "启动 FastAPI 后端"
@@ -420,6 +475,7 @@ main() {
     check_prerequisites
     setup_env
     start_infra
+    init_minio
     start_fastapi
     start_scheduler
     start_frontend
