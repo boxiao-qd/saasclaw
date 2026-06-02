@@ -22,6 +22,8 @@ class CronDAO:
 
     async def create(self, name: str | None, prompt: str, cron_expr: str) -> CronJob:
         job_id = str(uuid.uuid4())
+        effective_name = name or f"cron-{job_id[:8]}"
+
         from croniter import croniter
         now = _now()
         next_run = croniter(cron_expr, now).get_next(datetime)
@@ -34,6 +36,17 @@ class CronDAO:
 
         # Enforce per-user job count cap (max 20 active jobs)
         async with self._sf() as session:
+            # Reject duplicate names
+            if name:
+                existing = await session.execute(
+                    select(CronJob.id).where(
+                        CronJob.employee_id == self._employee_id,
+                        CronJob.name == name,
+                        CronJob.is_deleted == 0,
+                    )
+                )
+                if existing.scalar_one_or_none():
+                    raise ValueError(f"Cron job name '{name}' already exists")
             count_result = await session.execute(
                 select(func.count(CronJob.id)).where(
                     CronJob.employee_id == self._employee_id,
@@ -48,7 +61,7 @@ class CronDAO:
             job = CronJob(
                 id=job_id,
                 employee_id=self._employee_id,
-                name=name or f"cron-{job_id[:8]}",
+                name=effective_name,
                 prompt=prompt,
                 cron_expr=cron_expr,
                 next_run_at=next_run.isoformat(),
@@ -63,6 +76,17 @@ class CronDAO:
             result = await session.execute(
                 select(CronJob).where(
                     CronJob.id == job_id,
+                    CronJob.employee_id == self._employee_id,
+                    CronJob.is_deleted == 0,
+                )
+            )
+            return result.scalar_one_or_none()
+
+    async def get_by_name(self, name: str) -> CronJob | None:
+        async with self._sf() as session:
+            result = await session.execute(
+                select(CronJob).where(
+                    CronJob.name == name,
                     CronJob.employee_id == self._employee_id,
                     CronJob.is_deleted == 0,
                 )
@@ -107,6 +131,18 @@ class CronDAO:
             job_obj = result.scalar_one_or_none()
             if not job_obj:
                 raise ValueError(f"CronJob '{job_id}' not found")
+            # Reject duplicate names when renaming
+            if "name" in kwargs and kwargs["name"] != job_obj.name:
+                existing = await session.execute(
+                    select(CronJob.id).where(
+                        CronJob.employee_id == self._employee_id,
+                        CronJob.name == kwargs["name"],
+                        CronJob.is_deleted == 0,
+                        CronJob.id != job_id,
+                    )
+                )
+                if existing.scalar_one_or_none():
+                    raise ValueError(f"Cron job name '{kwargs['name']}' already exists")
             for key, value in kwargs.items():
                 setattr(job_obj, key, value)
             # If cron_expr changed, recalculate next_run_at
