@@ -346,6 +346,12 @@ class ContextLoader:
         user_skills = [s for s in db_skills if s["name"] not in sys_skill_names]
         user_subagents = [sa for sa in db_subagents if sa["name"] not in sys_subagent_names]
 
+        # Tag source so the agent can distinguish skill origin
+        for s in sys_skills:
+            s["_source"] = "sys_infra"
+        for s in user_skills:
+            s["_source"] = "user"
+
         all_skills = sys_skills + user_skills
         all_subagents = sys_subagents + user_subagents
 
@@ -353,7 +359,10 @@ class ContextLoader:
         if all_skills:
             lines.append("[可用技能]")
             for s in all_skills:
-                lines.append(f"  - {s['name']}: {s['description']}")
+                source = s.get("_source", "sys_infra")
+                is_global = s.get("is_global", False)
+                label = "系统" if source == "sys_infra" else ("全局" if is_global else "个人")
+                lines.append(f"  - {s['name']}（{label}）: {s['description']}")
 
         if all_subagents:
             lines.append("[可用子代理]")

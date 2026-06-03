@@ -23,14 +23,37 @@ def cleanup_session_assets(session_id: str) -> None:
         log.debug("Cleaned up L3 assets for session %s", session_id[:8])
 
 
+async def skill_has_scripts(employee_id: int, skill_name: str) -> bool:
+    """Check if a skill has a scripts/ directory (indicating file-output capability).
+
+    Returns True if the skill has at least one file under scripts/ in object storage.
+    """
+    from app.dao.skill_dao import SkillDAO
+    from app.storage.object_storage import create_object_storage
+    from app.db.database import get_session_factory
+
+    session_factory = get_session_factory()
+    dao = SkillDAO(session_factory, employee_id)
+    obj = await dao.get_by_name(skill_name)
+    if not obj or not obj.object_key:
+        return False
+
+    try:
+        storage = create_object_storage()
+        files = await storage.get_directory(employee_id, f"{obj.object_key}/scripts")
+        return bool(files)
+    except Exception:
+        return False
+
+
 async def fetch_skill_script(
     session_id: str,
     employee_id: int,
     skill_name: str,
     filename: str,
 ) -> Path | None:
-    """Fetch a script file from skill/script/ to /tmp cache. Returns local path or None."""
-    return await _fetch_asset(session_id, employee_id, "skills", skill_name, f"script/{filename}")
+    """Fetch a script file from skill/scripts/ to /tmp cache. Returns local path or None."""
+    return await _fetch_asset(session_id, employee_id, "skills", skill_name, f"scripts/{filename}")
 
 
 async def fetch_skill_reference(

@@ -45,7 +45,10 @@ SaaS化超级助理的skill的难点在于，如果skill执行的结果是文件
 当执行的结果是文件的时候，SaaS化超级助理的subagent的难点同上，解决方案也与skill类似。在此不做赘述。
 当生成的结果是文本的时候，执行结果可以在对话流中实时流式的返回给用户。
 ### 创建和使用自定义skill
-此功能尚未实现，敬请期待
+此功能已部分实现，用户可以通过自然语言或者使用/skill-creator来创建自己的只包含一个SKILL.md文件的skill。智能体在每轮对话启动的时候，会自动加载系统和用户级别的skill到上下文中。用户也可以通过/<skill-name>的方式来使用自己的skill。
+特别值得提的是，因为Lucid是无状态的saas化智能体，所以用户skill也是使用user_id进行隔离的，即用户只能看到和使用自己的skill，且使用方式和系统预制skill一致。
+![ppt-skill-file](docs/images/person_skill.jpeg)
+
 ### 创建和使用自定义subagent
 此功能尚未实现，敬请期待
 ### 查看消息通知

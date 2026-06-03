@@ -63,6 +63,23 @@ export async function apiDelete(path: string): Promise<void> {
   }
 }
 
+export async function apiUploadBinary<T>(path: string, body: Uint8Array, contentType: string): Promise<T> {
+  const h: Record<string, string> = {};
+  if (accessToken) h["Authorization"] = `Bearer ${accessToken}`;
+  h["Content-Type"] = contentType;
+
+  const resp = await fetch(`${API_BASE}${path}`, {
+    method: "POST",
+    headers: h,
+    body: new Blob([body.buffer as ArrayBuffer], { type: contentType }),
+  });
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({ message: "Request failed" }));
+    throw new Error(err.detail || err.message || `HTTP ${resp.status}`);
+  }
+  return resp.json();
+}
+
 // Auth API calls (no Bearer token needed)
 export async function authPost<T>(path: string, body: Record<string, unknown>): Promise<T> {
   const resp = await fetch(`${AUTH_BASE}${path}`, {

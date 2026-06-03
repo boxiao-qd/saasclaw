@@ -703,6 +703,28 @@ class AgentService:
                 "clarify that you can only access server-side paths and suggest alternatives."
             )
 
+        # 6.3. Workdir rule — file output handling for skills
+        workdir_rule = (
+            "[文件产物处理 — Skills 文件输出规范]\n"
+            "当使用 skill 产生中间文件或结果文件时，必须遵守以下规范：\n\n"
+            "**1. 创建工作目录**\n"
+            "python3 scripts/workdir.py create\n"
+            "返回 JSON: {\"work_dir\": \"tmp-doc/{employee_id}_{uuid}/\"}\n\n"
+            "**2. 在工作目录内生成文件**\n"
+            "- 所有中间过程和结果文件都写入 work_dir 内\n"
+            "- 不要写入 /tmp、/var/tmp 或项目源码目录\n\n"
+            "**3. 上传结果文件到 MinIO**\n"
+            "方式 A（推荐，一步完成上传+清理）：\n"
+            "python3 scripts/workdir.py upload-result <work_dir/result_file> --source <skill-name>\n"
+            "方式 B（分步，需要多个文件上传时）：\n"
+            "python3 scripts/upload_artifact.py <work_dir/result_file> --user-id $SA_EMPLOYEE_ID --source <skill-name>\n"
+            "python3 scripts/workdir.py cleanup --path <work_dir>\n\n"
+            "**4. 异常处理**\n"
+            "- upload-result 命令会在 finally 块中自动清理 work_dir\n"
+            "- 即使上传失败，work_dir 也会被清理，不会残留临时文件\n"
+            "- 如果任务失败，确保在最后调用 cleanup 清理 work_dir"
+        )
+
         # 6.5. Task tracking methodology — progressive reveal with TodoWrite
         plan_methodology = (
             "[任务追踪 — 强制规则]\n"
@@ -746,6 +768,7 @@ class AgentService:
             tools_section,
             compression_note,
             runtime_rule,
+            workdir_rule,
             plan_methodology,
             user_prompt,
         ]

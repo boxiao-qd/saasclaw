@@ -14,6 +14,7 @@ class SkillItem(BaseModel):
     source: Literal["user", "sys_infra"] = "user"
     version: Optional[str] = None
     slug: Optional[str] = None
+    frontmatter: Optional[dict] = None
 
 
 class SkillListResponse(BaseModel):
@@ -25,6 +26,7 @@ class CreateSkillRequest(BaseModel):
     content_md: str = Field(..., min_length=1)
     header_description: Optional[str] = Field(None, max_length=500)
     is_global: bool = False
+    frontmatter: Optional[dict] = None
 
 
 class CreateSkillResponse(BaseModel):
@@ -37,6 +39,7 @@ class UpdateSkillRequest(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=64)
     content_md: Optional[str] = Field(None, min_length=1)
     header_description: Optional[str] = Field(None, max_length=500)
+    frontmatter: Optional[dict] = None
 
 
 class UpdateSkillResponse(BaseModel):

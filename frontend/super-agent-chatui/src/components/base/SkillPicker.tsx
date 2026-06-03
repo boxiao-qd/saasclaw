@@ -83,12 +83,20 @@ export function SkillPicker({ skills, query, highlightIndex, onSelect, onClose }
                       系统
                     </span>
                   )}
+                  {skill.is_global && skill.source !== "sys_infra" && (
+                    <span className="shrink-0 font-mono text-[10px] px-1.5 py-0.5 rounded bg-[var(--color-primary-dim)] text-[var(--color-primary)]">
+                      全局
+                    </span>
+                  )}
+                  {!skill.is_global && skill.source !== "sys_infra" && (
+                    <span className="shrink-0 font-mono text-[10px] px-1.5 py-0.5 rounded bg-[var(--color-surface)] text-[var(--color-text-tertiary)] border border-[var(--color-border)]">
+                      个人
+                    </span>
+                  )}
                 </div>
-                {skill.header_description && (
-                  <div className="text-[var(--color-text-tertiary)] truncate mt-0.5">
-                    {highlightMatch(skill.header_description, query)}
-                  </div>
-                )}
+                <div className="text-[var(--color-text-tertiary)] truncate mt-0.5">
+                  {highlightMatch(skill.header_description || skill.name, query)}
+                </div>
               </div>
             </div>
           ))

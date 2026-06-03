@@ -269,7 +269,7 @@ export function FilesPage() {
       {previewFile && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={closePreview}>
           <div
-            className="bg-[var(--color-surface)] rounded-xl border border-[var(--color-border)] w-full max-w-3xl max-h-[85vh] flex flex-col m-4 shadow-2xl"
+            className="bg-[var(--color-surface)] rounded-xl border border-[var(--color-border)] w-full max-w-4xl max-h-[90vh] flex flex-col m-4 shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Modal header */}
@@ -294,18 +294,7 @@ export function FilesPage() {
                 <p className="text-red-400 text-xs text-center py-12">{previewError}</p>
               )}
               {!previewLoading && !previewError && previewContent && (
-                <div className="prose prose-invert prose-sm max-w-none
-                  prose-headings:text-[var(--color-text)]
-                  prose-p:text-[var(--color-text-secondary)]
-                  prose-a:text-[var(--color-primary)]
-                  prose-code:text-[var(--color-primary)] prose-code:bg-[var(--color-surface-alt)] prose-code:px-1 prose-code:py-0.5 prose-code:rounded
-                  prose-pre:bg-[var(--color-surface-alt)] prose-pre:border prose-pre:border-[var(--color-border)]
-                  prose-li:text-[var(--color-text-secondary)]
-                  prose-strong:text-[var(--color-text)]
-                  prose-th:text-[var(--color-text)] prose-td:text-[var(--color-text-secondary)]
-                  prose-blockquote:text-[var(--color-text-tertiary)] prose-blockquote:border-[var(--color-primary)]
-                  prose-hr:border-[var(--color-border)]
-                  [&_pre_code]:text-[var(--color-text)]">
+                <div className="md-content">
                   <ReactMarkdown remarkPlugins={remarkPlugins} rehypePlugins={rehypePlugins}>
                     {previewContent}
                   </ReactMarkdown>

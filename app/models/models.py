@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from sqlalchemy.orm import Mapped, mapped_column
-from sqlalchemy import String, Text, Integer, SmallInteger, Float, ForeignKey
+from sqlalchemy import String, Text, Integer, SmallInteger, Float, ForeignKey, UniqueConstraint
 from sqlalchemy.dialects.mysql import MEDIUMTEXT
 from app.models.base import Base, TimestampMixin, UserAccountMixin, GLOBAL_EMPLOYEE_ID
 
@@ -74,20 +74,26 @@ class UserProfile(Base, TimestampMixin):
 
 class Skill(Base, TimestampMixin):
     __tablename__ = "skills"
+    __table_args__ = (
+        UniqueConstraint("name", "employee_id", "is_deleted", name="uk_skill_name"),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     employee_id: Mapped[int] = mapped_column(Integer, default=GLOBAL_EMPLOYEE_ID)
     name: Mapped[str] = mapped_column(String(64), nullable=False)
-    content_md: Mapped[str] = mapped_column(Text, nullable=False)  # retained as fallback
+    content_md: Mapped[str] = mapped_column(MEDIUMTEXT, nullable=False)  # SKILL.md full text (up to 16MB)
     is_global: Mapped[int] = mapped_column(SmallInteger, default=0)
     usage_count: Mapped[int] = mapped_column(Integer, default=0)
     is_deleted: Mapped[int] = mapped_column(SmallInteger, default=0)
 
-    # object storage fields (new)
+    # object storage fields
     header_description: Mapped[str | None] = mapped_column(String(500))  # skill header for compact index
     object_key: Mapped[str | None] = mapped_column(String(512))  # object storage path to skill directory root
     content_hash: Mapped[str | None] = mapped_column(String(64))  # MD5/SHA256 for cache invalidation
     child_dir_id: Mapped[str | None] = mapped_column(String(36))  # directory structure for progressive loading
+
+    # frontmatter (raw YAML text from SKILL.md, parsed on read)
+    frontmatter: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class Subagent(Base, TimestampMixin):

@@ -1,6 +1,9 @@
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from sqlalchemy import event, text
 from app.config import settings
+import logging
+
+log = logging.getLogger(__name__)
 
 _engine = None
 _session_factory = None
@@ -114,6 +117,121 @@ async def _run_column_migrations():
             if "consecutive_errors" not in cols:
                 await session.execute(text(
                     "ALTER TABLE cron_jobs ADD COLUMN consecutive_errors INT DEFAULT 0"
+                ))
+                await session.commit()
+
+            # W0: user-custom-skill — skills table enhancements (top-level, both MySQL and SQLite)
+        if is_mysql:
+            # Ensure frontmatter column exists as TEXT (not JSON)
+            result = await session.execute(text(
+                "SELECT COLUMN_TYPE FROM INFORMATION_SCHEMA.COLUMNS "
+                "WHERE TABLE_SCHEMA = DATABASE() "
+                "  AND TABLE_NAME = 'skills' "
+                "  AND COLUMN_NAME = 'frontmatter'"
+            ))
+            col_type = result.scalar()
+            if col_type is None:
+                await session.execute(text(
+                    "ALTER TABLE skills ADD COLUMN frontmatter TEXT NULL"
+                ))
+                await session.commit()
+            elif "json" in col_type.lower():
+                # Migrate from JSON to TEXT (raw YAML text)
+                await session.execute(text(
+                    "ALTER TABLE skills MODIFY COLUMN frontmatter TEXT NULL"
+                ))
+                await session.commit()
+
+            # Modify content_md from TEXT to MEDIUMTEXT if not already MEDIUMTEXT
+            result = await session.execute(text(
+                "SELECT COLUMN_TYPE FROM INFORMATION_SCHEMA.COLUMNS "
+                "WHERE TABLE_SCHEMA = DATABASE() "
+                "  AND TABLE_NAME = 'skills' "
+                "  AND COLUMN_NAME = 'content_md'"
+            ))
+            content_md_type = result.scalar()
+            if content_md_type and "mediumtext" not in content_md_type.lower():
+                await session.execute(text(
+                    "ALTER TABLE skills MODIFY COLUMN content_md MEDIUMTEXT NOT NULL"
+                ))
+                await session.commit()
+
+            # Add unique index uk_skill_name if missing
+            result = await session.execute(text(
+                "SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS "
+                "WHERE TABLE_SCHEMA = DATABASE() "
+                "  AND TABLE_NAME = 'skills' "
+                "  AND INDEX_NAME = 'uk_skill_name'"
+            ))
+            if result.scalar() == 0:
+                await session.execute(text(
+                    "CREATE UNIQUE INDEX uk_skill_name ON skills(name, employee_id, is_deleted)"
+                ))
+                await session.commit()
+
+            # Backfill frontmatter for existing skills where it is NULL
+            import yaml
+            result = await session.execute(text(
+                "SELECT id, content_md FROM skills WHERE frontmatter IS NULL AND is_deleted = 0"
+            ))
+            rows = result.fetchall()
+            for row in rows:
+                skill_id, content_md = row
+                fm_text = None
+                stripped = content_md.strip()
+                if stripped.startswith("---"):
+                    parts = stripped.split("---", 2)
+                    if len(parts) >= 3:
+                        raw = parts[1].strip()
+                        if raw:
+                            fm_text = raw
+                if fm_text is not None:
+                    await session.execute(text(
+                        "UPDATE skills SET frontmatter = :fm WHERE id = :id"
+                    ), {"fm": fm_text, "id": skill_id})
+            if rows:
+                await session.commit()
+                log.info("Backfilled frontmatter for %d existing skills", len(rows))
+
+            # Backfill header_description for existing skills where it is NULL
+            result = await session.execute(text(
+                "SELECT id, content_md FROM skills WHERE header_description IS NULL AND is_deleted = 0"
+            ))
+            hd_rows = result.fetchall()
+            for row in hd_rows:
+                skill_id, content_md = row
+                header = None
+                stripped = (content_md or "").strip()
+                if stripped.startswith("---"):
+                    parts = stripped.split("---", 2)
+                    if len(parts) >= 3:
+                        try:
+                            fm = yaml.safe_load(parts[1])
+                            if isinstance(fm, dict):
+                                desc = fm.get("description")
+                                if isinstance(desc, str) and desc.strip():
+                                    header = " ".join(desc.split())[:500]
+                        except Exception:
+                            pass
+                if not header:
+                    for line in stripped.splitlines():
+                        line = line.strip().lstrip("#").strip()
+                        if line and line != "---":
+                            header = line[:500]
+                            break
+                if header:
+                    await session.execute(text(
+                        "UPDATE skills SET header_description = :hd WHERE id = :id"
+                    ), {"hd": header, "id": skill_id})
+            if hd_rows:
+                await session.commit()
+                log.info("Backfilled header_description for %d existing skills", len(hd_rows))
+        elif is_sqlite:
+            result = await session.execute(text("PRAGMA table_info(skills)"))
+            cols = {row[1] for row in result.fetchall()}
+            if "frontmatter" not in cols:
+                await session.execute(text(
+                    "ALTER TABLE skills ADD COLUMN frontmatter TEXT NULL"
                 ))
                 await session.commit()
 

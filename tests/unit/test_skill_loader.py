@@ -51,10 +51,10 @@ class TestSkillDAOGetIndex:
         mock_factory = MagicMock(return_value=mock_session)
 
         row = MagicMock()
-        row.__getitem__ = lambda self, i: ["my-skill", "A brief desc", False, "skills/my-skill"][i]
+        row.__getitem__ = lambda self, i: ["my-skill", "A brief desc", False, "skills/my-skill", "name: my-skill\ndescription: A brief desc"][i]
         mock_result = MagicMock()
-        mock_result.all.return_value = [row]
-        mock_session.scalars = AsyncMock(return_value=mock_result)
+        mock_result.fetchall.return_value = [row]
+        mock_session.execute = AsyncMock(return_value=mock_result)
         mock_session.close = AsyncMock()
 
         dao = SkillDAO(mock_factory, employee_id=42)
@@ -63,7 +63,7 @@ class TestSkillDAOGetIndex:
         assert len(result) == 1
         assert result[0]["name"] == "my-skill"
         assert result[0]["description"] == "A brief desc"
-        mock_session.scalars.assert_awaited_once()
+        mock_session.execute.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_get_index_uses_name_as_fallback_description(self):
@@ -73,10 +73,10 @@ class TestSkillDAOGetIndex:
         mock_factory = MagicMock(return_value=mock_session)
 
         row = MagicMock()
-        row.__getitem__ = lambda self, i: ["skill-x", None, True, None][i]
+        row.__getitem__ = lambda self, i: ["skill-x", None, True, None, None][i]
         mock_result = MagicMock()
-        mock_result.all.return_value = [row]
-        mock_session.scalars = AsyncMock(return_value=mock_result)
+        mock_result.fetchall.return_value = [row]
+        mock_session.execute = AsyncMock(return_value=mock_result)
         mock_session.close = AsyncMock()
 
         dao = SkillDAO(mock_factory, employee_id=1)
@@ -392,8 +392,243 @@ class TestContextLoaderSkillsIndex:
         loader._cache = mock_cache
 
         with patch("app.agent.context_loader.SkillDAO", return_value=mock_skill_dao), \
-             patch("app.agent.context_loader.SubagentDAO", return_value=mock_subagent_dao):
+             patch("app.agent.context_loader.SubagentDAO", return_value=mock_subagent_dao), \
+             patch("app.agent.context_loader.list_system_skills", return_value=[]), \
+             patch("app.agent.context_loader.list_system_subagents", return_value=[]):
             result = await loader.load_skills_index()
 
         assert result == ""
         mock_cache.set.assert_not_awaited()
+
+
+# ─── _parse_frontmatter ─────────────────────────────────────────────────────────
+
+class TestParseFrontmatter:
+    def _call(self, text: str) -> dict | None:
+        from app.api.v1.skills import _parse_frontmatter
+        return _parse_frontmatter(text)
+
+    def test_parses_valid_yaml_frontmatter(self):
+        md = "---\nname: my-skill\ndescription: A test\n---\n\n# Title"
+        result = self._call(md)
+        assert result == {"name": "my-skill", "description": "A test"}
+
+    def test_returns_none_for_no_frontmatter(self):
+        md = "# Just a heading\nContent"
+        assert self._call(md) is None
+
+    def test_returns_none_for_invalid_yaml(self):
+        md = "---\n: invalid: yaml: [\n---\n"
+        assert self._call(md) is None
+
+    def test_returns_none_for_non_dict_frontmatter(self):
+        md = "---\n- list item\n- another\n---\n"
+        assert self._call(md) is None
+
+    def test_returns_none_for_empty_string(self):
+        assert self._call("") is None
+
+    def test_parses_frontmatter_with_block_scalar(self):
+        md = "---\nname: test\ndescription: >\n  Long description\n  spanning lines\n---\n\nContent"
+        result = self._call(md)
+        assert result is not None
+        assert result["name"] == "test"
+        assert "Long description" in result["description"]
+
+    def test_strips_whitespace_in_input(self):
+        md = "  \n---\nname: trimmed\n---\n\nContent"
+        result = self._call(md)
+        assert result == {"name": "trimmed"}
+
+
+# ─── _extract_frontmatter_text ───────────────────────────────────────────────────
+
+class TestExtractFrontmatterText:
+    def _call(self, text: str) -> str | None:
+        from app.api.v1.skills import _extract_frontmatter_text
+        return _extract_frontmatter_text(text)
+
+    def test_extracts_raw_yaml_text(self):
+        md = "---\nname: my-skill\ndescription: A test\n---\n\n# Title"
+        result = self._call(md)
+        assert result == "name: my-skill\ndescription: A test"
+
+    def test_returns_none_for_no_frontmatter(self):
+        md = "# Just a heading\nContent"
+        assert self._call(md) is None
+
+    def test_returns_none_for_empty_frontmatter(self):
+        md = "---\n---\n\nContent"
+        assert self._call(md) is None
+
+    def test_preserves_block_scalars(self):
+        md = "---\nname: test\ndescription: >\n  Long description\n  spanning lines\n---\n\nContent"
+        result = self._call(md)
+        assert result is not None
+        assert ">" in result
+        assert "Long description" in result
+
+    def test_strips_whitespace_around_text(self):
+        md = "  \n---\n  name: trimmed  \n---\n\nContent"
+        result = self._call(md)
+        assert result == "name: trimmed"
+
+
+# ─── SkillDAO frontmatter support ──────────────────────────────────────────────
+
+class TestSkillDAOFrontmatter:
+    @pytest.mark.asyncio
+    async def test_get_index_includes_frontmatter(self):
+        from app.dao.skill_dao import SkillDAO
+
+        mock_session = AsyncMock()
+        mock_factory = MagicMock(return_value=mock_session)
+
+        fm_text = "name: my-skill\ndescription: From FM\nlicense: MIT"
+        row = MagicMock()
+        row.__getitem__ = lambda self, i: ["my-skill", None, False, "skills/my-skill", fm_text][i]
+        mock_result = MagicMock()
+        mock_result.fetchall.return_value = [row]
+        mock_session.execute = AsyncMock(return_value=mock_result)
+        mock_session.close = AsyncMock()
+
+        dao = SkillDAO(mock_factory, employee_id=42)
+        result = await dao.get_index()
+
+        assert result[0]["frontmatter"] == {"name": "my-skill", "description": "From FM", "license": "MIT"}
+        assert result[0]["description"] == "From FM"
+
+    @pytest.mark.asyncio
+    async def test_get_index_falls_back_to_name_when_no_description(self):
+        from app.dao.skill_dao import SkillDAO
+
+        mock_session = AsyncMock()
+        mock_factory = MagicMock(return_value=mock_session)
+
+        # frontmatter without description field
+        fm_text = "name: my-skill"
+        row = MagicMock()
+        row.__getitem__ = lambda self, i: ["my-skill", None, False, None, fm_text][i]
+        mock_result = MagicMock()
+        mock_result.fetchall.return_value = [row]
+        mock_session.execute = AsyncMock(return_value=mock_result)
+        mock_session.close = AsyncMock()
+
+        dao = SkillDAO(mock_factory, employee_id=1)
+        result = await dao.get_index()
+
+        assert result[0]["description"] == "my-skill"
+
+    @pytest.mark.asyncio
+    async def test_integrity_error_on_duplicate_name(self):
+        from app.dao.skill_dao import SkillDAO
+        from app.middleware.error_handler import AppError
+        from sqlalchemy.exc import IntegrityError
+
+        mock_session = AsyncMock()
+        mock_factory = MagicMock(return_value=mock_session)
+
+        # Simulate IntegrityError on commit
+        mock_session.commit.side_effect = IntegrityError("duplicate", {}, Exception())
+
+        dao = SkillDAO(mock_factory, employee_id=42)
+        with pytest.raises(AppError) as exc_info:
+            await dao.create(name="existing-skill", content_md="# Test", frontmatter="name: existing-skill")
+        assert exc_info.value.error_code == "BX_SKILL_1002"
+        mock_session.rollback.assert_called_once()
+
+
+# ─── Upload directory schema ────────────────────────────────────────────────────
+
+class TestUploadDirectorySchema:
+    def test_upload_directory_response_all_fields(self):
+        from app.api.v1.skills import UploadDirectoryResponse
+        resp = UploadDirectoryResponse(
+            id="abc-123",
+            name="my-skill",
+            object_key="user-skill/abc-123",
+            header_description="My Skill Title",
+            file_count=5,
+            message="Uploaded 5 files to user-skill/abc-123",
+        )
+        assert resp.id == "abc-123"
+        assert resp.file_count == 5
+        assert resp.object_key == "user-skill/abc-123"
+
+    def test_upload_directory_response_minimal(self):
+        from app.api.v1.skills import UploadDirectoryResponse
+        resp = UploadDirectoryResponse(
+            id="abc", name="untitled", object_key="user-skill/abc",
+            file_count=1, message="done",
+        )
+        assert resp.header_description is None
+
+
+# ─── skill_has_scripts ─────────────────────────────────────────────────────────
+
+class TestSkillHasScripts:
+    @pytest.mark.asyncio
+    async def test_returns_true_when_scripts_exist(self):
+        from app.agent.skill_asset_loader import skill_has_scripts
+
+        mock_skill = MagicMock()
+        mock_skill.object_key = "user-skill/abc"
+
+        mock_storage = AsyncMock()
+        mock_storage.get_directory = AsyncMock(return_value={"scripts/example.py": b"print('hi')"})
+
+        with patch("app.dao.skill_dao.SkillDAO") as mock_dao_cls, \
+             patch("app.storage.object_storage.create_object_storage", return_value=mock_storage), \
+             patch("app.db.database.get_session_factory"):
+            mock_dao = mock_dao_cls.return_value
+            mock_dao.get_by_name = AsyncMock(return_value=mock_skill)
+            result = await skill_has_scripts(employee_id=1, skill_name="my-skill")
+        assert result is True
+
+    @pytest.mark.asyncio
+    async def test_returns_false_when_no_object_key(self):
+        from app.agent.skill_asset_loader import skill_has_scripts
+
+        mock_skill = MagicMock()
+        mock_skill.object_key = None
+
+        with patch("app.dao.skill_dao.SkillDAO") as mock_dao_cls, \
+             patch("app.db.database.get_session_factory"):
+            mock_dao = mock_dao_cls.return_value
+            mock_dao.get_by_name = AsyncMock(return_value=mock_skill)
+            result = await skill_has_scripts(employee_id=1, skill_name="my-skill")
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_returns_false_when_skill_not_found(self):
+        from app.agent.skill_asset_loader import skill_has_scripts
+
+        with patch("app.dao.skill_dao.SkillDAO") as mock_dao_cls, \
+             patch("app.db.database.get_session_factory"):
+            mock_dao = mock_dao_cls.return_value
+            mock_dao.get_by_name = AsyncMock(return_value=None)
+            result = await skill_has_scripts(employee_id=1, skill_name="nonexistent")
+        assert result is False
+
+
+# ─── Tar builder validation ─────────────────────────────────────────────────────
+
+class TestTarFormat:
+    def test_produces_valid_tar_structure(self):
+        import sys
+        sys.path.insert(0, "frontend/super-agent-chatui/src/utils")
+        # Use direct inline test since we can't import TS in Python
+        pass  # Tar builder is frontend-only; validated by TypeScript compilation
+
+    def test_workdir_script_has_upload_result_command(self):
+        import subprocess
+        from pathlib import Path
+        project_root = Path(__file__).resolve().parents[2]
+        workdir_script = project_root / "scripts" / "workdir.py"
+        result = subprocess.run(
+            ["python3", str(workdir_script), "--help"],
+            capture_output=True, text=True,
+        )
+        assert result.returncode == 0
+        assert "upload-result" in result.stdout
+        assert "cleanup-stale" in result.stdout

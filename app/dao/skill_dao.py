@@ -1,5 +1,6 @@
 import uuid
 from sqlalchemy import select, update
+from sqlalchemy.exc import IntegrityError
 from app.dao.base import BaseDAO
 from app.models.models import Skill as SkillModel
 from app.models.base import GLOBAL_EMPLOYEE_ID
@@ -44,12 +45,10 @@ class SkillDAO(BaseDAO):
         await session.close()
         return obj
 
-    async def create(self, name: str, content_md: str, is_global: bool = False) -> SkillModel:
+    async def create(self, name: str, content_md: str, is_global: bool = False,
+                     frontmatter: str | None = None) -> SkillModel:
         if is_global and self._employee_id != GLOBAL_EMPLOYEE_ID:
             raise AppError("BX_SKILL_1003", "Non-admin users cannot create global skills", 403)
-        existing = await self.get_by_name(name)
-        if existing:
-            raise AppError("BX_SKILL_1002", f"Skill '{name}' already exists", 409)
         session = self._session()
         eid = GLOBAL_EMPLOYEE_ID if is_global else self._employee_id
         obj = SkillModel(
@@ -58,34 +57,44 @@ class SkillDAO(BaseDAO):
             name=name,
             content_md=content_md,
             is_global=int(is_global),
+            frontmatter=frontmatter,
         )
         session.add(obj)
-        await session.commit()
-        await session.refresh(obj)
-        await session.close()
+        try:
+            await session.commit()
+            await session.refresh(obj)
+        except IntegrityError:
+            await session.rollback()
+            raise AppError("BX_SKILL_1002", f"Skill '{name}' already exists", 409)
+        finally:
+            await session.close()
         return obj
 
     async def update(self, skill_id: str, name: str | None = None, content_md: str | None = None,
-                     header_description: str | None = None) -> SkillModel:
+                     header_description: str | None = None,
+                     frontmatter: str | None = None) -> SkillModel:
         obj = await self.get_by_id(skill_id)
         if obj.employee_id == GLOBAL_EMPLOYEE_ID and self._employee_id != GLOBAL_EMPLOYEE_ID:
             raise AppError("BX_SKILL_1003", "Cannot modify global skill", 403)
         session = self._session()
         values = {}
         if name is not None:
-            existing = await self.get_by_name(name)
-            if existing and existing.id != skill_id:
-                raise AppError("BX_SKILL_1002", f"Skill '{name}' already exists", 409)
             values["name"] = name
         if content_md is not None:
             values["content_md"] = content_md
         if header_description is not None:
             values["header_description"] = header_description
+        if frontmatter is not None:
+            values["frontmatter"] = frontmatter
         if values:
-            await session.execute(
-                update(SkillModel).where(SkillModel.id == skill_id).values(**values)
-            )
-            await session.commit()
+            try:
+                await session.execute(
+                    update(SkillModel).where(SkillModel.id == skill_id).values(**values)
+                )
+                await session.commit()
+            except IntegrityError:
+                await session.rollback()
+                raise AppError("BX_SKILL_1002", f"Skill name conflict", 409)
         await session.close()
         updated = await self.get_by_id(skill_id)
         await self._invalidate_cache(updated.name)
@@ -121,22 +130,39 @@ class SkillDAO(BaseDAO):
         await session.close()
 
     async def get_index(self) -> list[dict]:
-        """Return compact skill index (name + header_description) for system prompt.
-        Progressive loading Tier 1: only header info, no full content."""
+        """Return compact skill index (name + header_description + frontmatter) for system prompt.
+        Progressive loading Tier 1: metadata only, no full content."""
+        import yaml as _yaml
         session = self._session()
-        result = await session.scalars(
-            select(SkillModel.name, SkillModel.header_description, SkillModel.is_global, SkillModel.object_key)
+        result = await session.execute(
+            select(SkillModel.name, SkillModel.header_description, SkillModel.is_global,
+                   SkillModel.object_key, SkillModel.frontmatter)
             .where(self._filter_user_or_global(SkillModel), SkillModel.is_deleted == 0)
             .order_by(SkillModel.is_global.desc(), SkillModel.name.asc())
         )
-        items = [{"name": r[0], "description": r[1] or r[0], "is_global": r[2], "object_key": r[3]} for r in result.all()]
+        items = []
+        for r in result.fetchall():
+            fm_text = r[4] or ""
+            fm: dict = {}
+            if fm_text.strip():
+                try:
+                    parsed = _yaml.safe_load(fm_text)
+                    if isinstance(parsed, dict):
+                        fm = parsed
+                except _yaml.YAMLError:
+                    pass
+            desc = r[1] or fm.get("description") or r[0]
+            items.append({
+                "name": r[0], "description": desc, "is_global": r[2],
+                "object_key": r[3], "frontmatter": fm,
+            })
         await session.close()
         return items
 
     async def get_skill_md(self, name: str) -> str | None:
         """Get SKILL.md content for a specific skill.
         Progressive loading Tier 2: load SKILL.md after agent selects a skill.
-        Priority: cache → object storage → content_md fallback."""
+        Priority: cache → MySQL content_md → object storage (legacy fallback)."""
         from app.cache.cache_provider import create_cache_provider
         from app.storage.object_storage import create_object_storage
 
@@ -151,7 +177,12 @@ class SkillDAO(BaseDAO):
         if cached:
             return cached
 
-        # try object storage
+        # try MySQL content_md (primary L2 source)
+        if skill.content_md:
+            await cache.set(f"skill_content:{self._employee_id}:{name}", skill.content_md, ttl=600)
+            return skill.content_md
+
+        # legacy fallback: object storage
         if skill.object_key:
             obj_storage = create_object_storage()
             content = await obj_storage.get(self._employee_id, f"{skill.object_key}/SKILL.md")
@@ -159,11 +190,6 @@ class SkillDAO(BaseDAO):
                 text = content.decode("utf-8") if isinstance(content, bytes) else content
                 await cache.set(f"skill_content:{self._employee_id}:{name}", text, ttl=600)
                 return text
-
-        # fallback to DB content_md
-        if skill.content_md:
-            await cache.set(f"skill_content:{self._employee_id}:{name}", skill.content_md, ttl=600)
-            return skill.content_md
 
         return None
 
@@ -181,11 +207,14 @@ class SkillDAO(BaseDAO):
         dir_key = f"{skill.object_key}/{sub_path}" if sub_path else skill.object_key
         return await obj_storage.get_directory(self._employee_id, dir_key)
 
-    async def update_object_key(self, skill_id: str, object_key: str, content_hash: str,
+    async def update_object_key(self, skill_id: str, object_key: str | None, content_hash: str,
                                 header_description: str | None = None) -> None:
-        """Update object storage association for a skill."""
+        """Update object storage association for a skill.
+        object_key=None means skill has no MinIO files (SKILL.md only)."""
         session = self._session()
-        values: dict = {"object_key": object_key, "content_hash": content_hash}
+        values: dict = {"content_hash": content_hash}
+        if object_key is not None:
+            values["object_key"] = object_key
         if header_description is not None:
             values["header_description"] = header_description
         await session.execute(

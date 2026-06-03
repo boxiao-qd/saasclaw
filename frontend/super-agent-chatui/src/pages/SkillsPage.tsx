@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { apiGet, apiPost, apiPut, apiDelete } from "@/services/api-client";
 import type { SkillItem } from "@/types/api-types";
+import FolderUploader from "@/components/base/FolderUploader";
 
 type Mode = "list" | "create" | "edit" | "upload";
 
@@ -28,6 +29,11 @@ export function SkillsPage() {
   const [uploadMd, setUploadMd] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [showFolderUploader, setShowFolderUploader] = useState(false);
+  const [overwriteDialog, setOverwriteDialog] = useState<{
+    conflictName: string;
+    retryAction: () => void;
+  } | null>(null);
 
   const fetchSkills = async () => {
     setLoading(true);
@@ -68,6 +74,44 @@ export function SkillsPage() {
     try {
       await apiPost("/skills", {
         name: createForm.name.trim(),
+        content_md: createForm.content_md,
+        header_description: createForm.header_description || undefined,
+        is_global: false,
+      } as Record<string, unknown>);
+      setCreateForm(emptyCreate());
+      setMode("list");
+      fetchSkills();
+    } catch (e) {
+      const msg = String(e);
+      if (msg.includes("already exists") || msg.includes("BX_SKILL_1002")) {
+        setOverwriteDialog({
+          conflictName: createForm.name.trim(),
+          retryAction: () => handleCreateOverwrite(createForm.name.trim()),
+        });
+      } else {
+        setError(`创建失败: ${msg}`);
+      }
+    }
+    setBusy(false);
+  };
+
+  const handleCreateOverwrite = async (name: string) => {
+    setOverwriteDialog(null);
+    const existing = skills.find((s) => s.name === name);
+    if (existing) {
+      try {
+        await apiDelete(`/skills/${existing.id}`);
+        await fetchSkills();
+      } catch (e) {
+        setError(`覆盖失败: ${e}`);
+        return;
+      }
+    }
+    // Re-attempt create
+    setBusy(true);
+    try {
+      await apiPost("/skills", {
+        name,
         content_md: createForm.content_md,
         header_description: createForm.header_description || undefined,
         is_global: false,
@@ -126,7 +170,85 @@ export function SkillsPage() {
     }
   };
 
+  const handleFolderUploadSuccess = (result: { id: string; name: string; file_count: number }) => {
+    setShowFolderUploader(false);
+    fetchSkills();
+    alert(`技能「${result.name}」上传成功（${result.file_count} 个文件）`);
+  };
+
+  const handleFolderUploadError = (err: string) => {
+    if (err.includes("already exists") || err.includes("BX_SKILL_1002")) {
+      // Extract name from error message like "Skill 'xxx' already exists"
+      const match = err.match(/Skill '([^']+)'/);
+      const conflictName = match?.[1] || "unknown";
+      setOverwriteDialog({
+        conflictName,
+        retryAction: () => handleFolderUploadOverwrite(conflictName),
+      });
+    } else {
+      setError(`文件夹上传失败: ${err}`);
+    }
+    setShowFolderUploader(false);
+  };
+
+  const handleFolderUploadOverwrite = async (name: string) => {
+    setOverwriteDialog(null);
+    // Refresh skills to get the latest list
+    await fetchSkills();
+    const existing = skills.find((s) => s.name === name);
+    if (existing) {
+      try {
+        await apiDelete(`/skills/${existing.id}`);
+        await fetchSkills();
+      } catch (e) {
+        setError(`覆盖失败: ${e}`);
+        return;
+      }
+    }
+    // Re-show folder uploader
+    setShowFolderUploader(true);
+  };
+
   const back = () => { setMode("list"); setError(""); };
+
+  // ── Overwrite dialog ─────────────────────────────────────────────────────
+  if (overwriteDialog) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl p-6 w-full max-w-sm mx-4">
+          <h3 className="text-lg font-semibold mb-2 text-gray-900 dark:text-gray-100">技能已存在</h3>
+          <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+            技能「{overwriteDialog.conflictName}」已存在，是否覆盖？
+          </p>
+          <div className="flex justify-end gap-3">
+            <button
+              onClick={() => setOverwriteDialog(null)}
+              className="px-4 py-2 text-sm font-mono rounded border border-[var(--color-border)] text-[var(--color-text-secondary)] hover:text-[var(--color-text)]"
+            >
+              取消
+            </button>
+            <button
+              onClick={overwriteDialog.retryAction}
+              className="px-4 py-2 text-sm font-mono rounded bg-[var(--color-error)] text-white hover:opacity-90"
+            >
+              覆盖
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Folder uploader modal ────────────────────────────────────────────────
+  if (showFolderUploader) {
+    return (
+      <FolderUploader
+        onSuccess={handleFolderUploadSuccess}
+        onError={handleFolderUploadError}
+        onCancel={() => setShowFolderUploader(false)}
+      />
+    );
+  }
 
   // ── Create / Edit / Upload form ──────────────────────────────────────────
   if (mode === "create") {
@@ -273,13 +395,22 @@ export function SkillsPage() {
     <div className="p-6 max-w-3xl" role="main" aria-label="技能管理">
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-lg font-semibold font-mono">技能管理</h1>
-        <button
-          onClick={() => { setCreateForm(emptyCreate()); setError(""); setMode("create"); }}
-          className="px-3 py-1.5 text-sm font-mono rounded border border-[var(--color-primary)] text-[var(--color-primary)] hover:bg-[var(--color-primary-dim)] transition-colors"
-          aria-label="新建技能"
-        >
-          + 新建技能
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => { setShowFolderUploader(true); setError(""); }}
+            className="px-3 py-1.5 text-sm font-mono rounded border border-[var(--color-border)] text-[var(--color-text-secondary)] hover:text-[var(--color-text)] hover:border-[var(--color-primary)] transition-colors"
+            aria-label="上传技能文件夹"
+          >
+            📁 上传文件夹
+          </button>
+          <button
+            onClick={() => { setCreateForm(emptyCreate()); setError(""); setMode("create"); }}
+            className="px-3 py-1.5 text-sm font-mono rounded border border-[var(--color-primary)] text-[var(--color-primary)] hover:bg-[var(--color-primary-dim)] transition-colors"
+            aria-label="新建技能"
+          >
+            + 新建技能
+          </button>
+        </div>
       </div>
 
       {loading && <p className="text-[var(--color-text-secondary)] text-sm font-mono">加载中...</p>}
@@ -294,9 +425,19 @@ export function SkillsPage() {
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 mb-1">
                   <span className="font-medium font-mono text-sm truncate">{s.name}</span>
-                  {s.is_global && (
+                  {s.source === "sys_infra" && (
+                    <span className="text-[0.65rem] font-mono px-1.5 py-0.5 rounded bg-[var(--color-primary)]/10 text-[var(--color-primary)] shrink-0">
+                      系统
+                    </span>
+                  )}
+                  {s.is_global && s.source !== "sys_infra" && (
                     <span className="text-[0.65rem] font-mono px-1.5 py-0.5 rounded bg-[var(--color-primary-dim)] text-[var(--color-primary)] shrink-0">
                       全局
+                    </span>
+                  )}
+                  {!s.is_global && s.source !== "sys_infra" && (
+                    <span className="text-[0.65rem] font-mono px-1.5 py-0.5 rounded bg-[var(--color-surface)] text-[var(--color-text-tertiary)] border border-[var(--color-border)] shrink-0">
+                      个人
                     </span>
                   )}
                   {s.object_key && (
@@ -305,9 +446,7 @@ export function SkillsPage() {
                     </span>
                   )}
                 </div>
-                {s.header_description && (
-                  <p className="text-xs text-[var(--color-text-secondary)] truncate">{s.header_description}</p>
-                )}
+                <p className="text-xs text-[var(--color-text-secondary)] truncate">{s.header_description || s.name}</p>
                 <p className="text-[0.65rem] text-[var(--color-text-tertiary)] font-mono mt-1">
                   使用 {s.usage_count} 次 · {s.created_at.slice(0, 10)}
                 </p>

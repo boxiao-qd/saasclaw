@@ -7,6 +7,45 @@ from app.dao.skill_dao import SkillDAO
 from app.storage.sys_infra import list_system_skills, get_system_skill_md
 
 
+def _extract_frontmatter_text(content_md: str) -> str | None:
+    """Extract raw YAML frontmatter text from SKILL.md content."""
+    stripped = content_md.strip()
+    if not stripped.startswith("---"):
+        return None
+    parts = stripped.split("---", 2)
+    if len(parts) < 3:
+        return None
+    text = parts[1].strip()
+    return text if text else None
+
+
+def _extract_header(content_md: str) -> str:
+    """Extract description from SKILL.md frontmatter, falling back to first body line."""
+    import yaml
+    stripped = content_md.strip()
+    if stripped.startswith("---"):
+        parts = stripped.split("---", 2)
+        if len(parts) >= 3:
+            try:
+                fm = yaml.safe_load(parts[1])
+                if isinstance(fm, dict):
+                    desc = fm.get("description")
+                    if isinstance(desc, str) and desc.strip():
+                        return " ".join(desc.split())[:500]
+            except yaml.YAMLError:
+                pass
+            body = parts[2]
+        else:
+            body = stripped
+    else:
+        body = stripped
+    for line in body.splitlines():
+        line = line.strip().lstrip("#").strip()
+        if line and line != "---":
+            return line[:500]
+    return ""
+
+
 TOOL_DEFS = [
     {
         "type": "function",
@@ -55,9 +94,10 @@ TOOL_DEFS = [
         "function": {
             "name": "skill_manage",
             "description": (
-                "Create, update, or delete a PERSONAL skill. Users can only manage their own personal skills — "
-                "global/system skills are read-only and cannot be created, updated, or deleted by non-admin users. "
-                "Skills store reusable instruction documents for specialized knowledge."
+                "Update or delete a PERSONAL skill. "
+                "IMPORTANT: Do NOT use action=create to create new skills — always use the /skill-creator skill workflow instead, "
+                "which ensures proper frontmatter, structure, and storage in MySQL + MinIO. "
+                "Use this tool ONLY for action=update (modify existing skill content) or action=delete."
             ),
             "parameters": {
                 "type": "object",
@@ -142,7 +182,7 @@ async def skill_view(args_str: str, employee_id: int) -> str:
         if not skill:
             return json.dumps({"error": f"Skill '{name}' not found"}, ensure_ascii=False)
 
-        # L2: load full SKILL.md via cache → object storage → content_md fallback
+        # L2: load full SKILL.md — cache → MySQL content_md → object storage (legacy fallback)
         content_md = await dao.get_skill_md(name)
         await dao.increment_usage(skill.id)
 
@@ -167,17 +207,9 @@ async def skill_manage(args_str: str, employee_id: int) -> str:
 
     try:
         if action == "create":
-            if not content_md:
-                return json.dumps({"error": "content_md is required for create"}, ensure_ascii=False)
-            if is_global:
-                return json.dumps({"error": "Non-admin users cannot create global skills. Users can only create personal skills (is_global=false)."}, ensure_ascii=False)
-            skill = await dao.create(name=name, content_md=content_md, is_global=False)
             return json.dumps({
-                "id": skill.id,
-                "name": skill.name,
-                "is_global": bool(skill.is_global),
-                "created_at": skill.created_at,
-                "message": f"Skill '{name}' created",
+                "error": "Do not use skill_manage to create skills. Use the /skill-creator skill workflow instead — it ensures proper frontmatter, structure, and storage in MySQL + MinIO.",
+                "hint": "Invoke /skill-creator to guide the user through proper skill creation.",
             }, ensure_ascii=False)
 
         elif action == "update":
@@ -187,6 +219,10 @@ async def skill_manage(args_str: str, employee_id: int) -> str:
             update_data = {}
             if content_md:
                 update_data["content_md"] = content_md
+                update_data["frontmatter"] = _extract_frontmatter_text(content_md)
+                header = _extract_header(content_md)
+                if header:
+                    update_data["header_description"] = header
             if args.get("new_name"):
                 update_data["name"] = args.get("new_name")
             updated = await dao.update(skill.id, **update_data)
